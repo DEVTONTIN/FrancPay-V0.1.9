@@ -74,6 +74,32 @@ const computeDailyReward = (principal: number, apyPercent: number) => {
   return Number(((principal * apyPercent) / 100 / 365).toFixed(2));
 };
 
+const normalizeStakeProductRecord = (input: Record<string, any>, fallbackId?: string): StakeProductRecord => {
+  const resolveString = (value: any, fallback: string) =>
+    typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+  const code = resolveString(input.code, fallbackId ?? 'STAKE');
+  const id = resolveString(input.id, fallbackId ?? code);
+  return {
+    id,
+    code,
+    title: resolveString(input.title, 'Staking'),
+    description:
+      typeof input.description === 'string'
+        ? input.description
+        : input.description === null || input.description === undefined
+        ? null
+        : String(input.description),
+    apyPercent: Number(input.apyPercent ?? 0),
+    lockPeriodDays: Number(input.lockPeriodDays ?? 0),
+    minAmountFre: Number(input.minAmountFre ?? 0),
+    maxAmountFre:
+      input.maxAmountFre === null || input.maxAmountFre === undefined ? null : Number(input.maxAmountFre),
+    isLocked: Boolean(
+      input.isLocked !== undefined ? input.isLocked : Number(input.lockPeriodDays ?? 0) > 0
+    ),
+  };
+};
+
 export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> = ({
   authUserId,
   balanceFre,
@@ -113,12 +139,9 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
     if (productError) {
       console.error('Stake product fetch error', productError);
     } else if (productData) {
-      const normalized = productData.map((product) => ({
-        ...product,
-        apyPercent: Number(product.apyPercent ?? 0),
-        minAmountFre: Number(product.minAmountFre ?? 0),
-        maxAmountFre: product.maxAmountFre === null ? null : Number(product.maxAmountFre),
-      }));
+      const normalized: StakeProductRecord[] = (productData ?? []).map((product, index) =>
+        normalizeStakeProductRecord(product as Record<string, any>, `STAKE-${index}`)
+      );
       setProducts(normalized);
     }
 
@@ -126,31 +149,25 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
       console.error('Stake position fetch error', positionResult.error);
       setPositions([]);
     } else {
-      const normalized = (positionResult.data ?? []).map((row) => {
-        const fallback = row.productSnapshot || {};
-        const product = row.product
-          ? {
-              ...row.product,
-              apyPercent: Number(row.product.apyPercent ?? 0),
-              minAmountFre: Number(row.product.minAmountFre ?? 0),
-              maxAmountFre: row.product.maxAmountFre === null ? null : Number(row.product.maxAmountFre),
-            }
-          : {
-              id: fallback.id || row.productId || 'snapshot',
-              code: fallback.code || 'STAKE',
-              title: fallback.title || 'Staking',
-              description: fallback.description,
-              apyPercent: Number(fallback.apyPercent ?? 0),
-              lockPeriodDays: Number(fallback.lockPeriodDays ?? 0),
-              minAmountFre: Number(fallback.minAmountFre ?? 0),
-              maxAmountFre: fallback.maxAmountFre === null ? null : Number(fallback.maxAmountFre ?? 0),
-              isLocked: Boolean(fallback.isLocked),
-            };
+      const normalized: StakePositionRecord[] = (positionResult.data ?? []).map((row, index) => {
+        const typedRow = row as Record<string, any>;
+        const snapshot = (typedRow.productSnapshot ?? {}) as Record<string, any>;
+        const normalizedProduct = typedRow.product
+          ? normalizeStakeProductRecord(typedRow.product as Record<string, any>, typedRow.productId)
+          : normalizeStakeProductRecord(snapshot, typedRow.productId ?? `POSITION-${index}`);
+        const statusValue = (typedRow.status as StakePositionRecord['status']) ?? 'ACTIVE';
         return {
-          ...row,
-          principalFre: Number(row.principalFre ?? 0),
-          rewardAccruedFre: Number(row.rewardAccruedFre ?? 0),
-          product,
+          id: String(typedRow.id ?? `position-${index}`),
+          productId: typeof typedRow.productId === 'string' ? typedRow.productId : normalizedProduct.id,
+          principalFre: Number(typedRow.principalFre ?? 0),
+          rewardAccruedFre: Number(typedRow.rewardAccruedFre ?? 0),
+          status: statusValue,
+          lockedUntil: typedRow.lockedUntil ?? null,
+          nextRewardAt: typedRow.nextRewardAt ?? null,
+          redeemedAt: typedRow.redeemedAt ?? null,
+          createdAt: typedRow.createdAt ?? new Date().toISOString(),
+          productSnapshot: snapshot,
+          product: normalizedProduct,
         };
       });
       setPositions(normalized);
@@ -414,70 +431,77 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
             <p className="text-xs text-slate-500">Aucun staking en cours. Sélectionnez une offre ci-dessus.</p>
           ) : (
             <div className="space-y-3">
-              {activePositions.map((position) => (
-                <div
-                  key={position.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold">{position.product?.title ?? 'Staking'}</p>
-                      <p className="text-[11px] text-slate-500">Créé le {formatDateTime(position.createdAt)}</p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={position.product?.isLocked ? 'border-amber-400/50 text-amber-300' : 'border-emerald-400/50 text-emerald-200'}
-                    >
-                      {position.product?.isLocked ? 'Bloqué' : 'Flexible'}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-[11px] text-slate-400">Capital</p>
-                      <p className="font-semibold">{formatNumber(position.principalFre)} FRE</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Rewards cumulés</p>
-                      <p className="font-semibold text-emerald-300">{formatNumber(position.rewardAccruedFre)} FRE</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Prochaine reward</p>
-                      <p className="font-semibold">{formatDateTime(position.nextRewardAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Déblocage</p>
-                      <p className="font-semibold">
-                        {position.product?.isLocked
-                          ? formatDateTime(position.lockedUntil)
-                          : 'Disponible immédiat'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">Reward quotidien</p>
-                      <p className="font-semibold text-emerald-200">
-                        {formatNumber(
-                          computeDailyReward(
-                            position.principalFre,
-                            position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0)
-                          )
-                        )}{' '}
-                        FRE
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="mt-2 rounded-xl border-slate-700 text-white hover:bg-slate-800/60 disabled:opacity-40"
-                    onClick={() => handleRedeem(position)}
-                    disabled={
-                      redeeming === position.id ||
-                      (position.product?.isLocked && position.lockedUntil && new Date(position.lockedUntil) > new Date())
-                    }
+              {activePositions.map((position) => {
+                const isLockedFuture =
+                  Boolean(position.product?.isLocked) &&
+                  !!position.lockedUntil &&
+                  new Date(position.lockedUntil) > new Date();
+                return (
+                  <div
+                    key={position.id}
+                    className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 flex flex-col gap-2"
                   >
-                    {redeeming === position.id ? 'Traitement...' : 'Retirer'}
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">{position.product?.title ?? 'Staking'}</p>
+                        <p className="text-[11px] text-slate-500">Créé le {formatDateTime(position.createdAt)}</p>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={
+                          position.product?.isLocked
+                            ? 'border-amber-400/50 text-amber-300'
+                            : 'border-emerald-400/50 text-emerald-200'
+                        }
+                      >
+                        {position.product?.isLocked ? 'Bloqué' : 'Flexible'}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-[11px] text-slate-400">Capital</p>
+                        <p className="font-semibold">{formatNumber(position.principalFre)} FRE</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Rewards cumulés</p>
+                        <p className="font-semibold text-emerald-300">{formatNumber(position.rewardAccruedFre)} FRE</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Prochaine reward</p>
+                        <p className="font-semibold">{formatDateTime(position.nextRewardAt)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Déblocage</p>
+                        <p className="font-semibold">
+                          {position.product?.isLocked
+                            ? formatDateTime(position.lockedUntil)
+                            : 'Disponible immédiat'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">Reward quotidien</p>
+                        <p className="font-semibold text-emerald-200">
+                          {formatNumber(
+                            computeDailyReward(
+                              position.principalFre,
+                              position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0)
+                            )
+                          )}{' '}
+                          FRE
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="mt-2 rounded-xl border-slate-700 text-white hover:bg-slate-800/60 disabled:opacity-40"
+                      onClick={() => handleRedeem(position)}
+                      disabled={redeeming === position.id || isLockedFuture}
+                    >
+                      {redeeming === position.id ? 'Traitement...' : 'Retirer'}
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -509,7 +533,14 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
         </Card>
       )}
 
-      <AlertDialog open={Boolean(stakePreview)} onOpenChange={(open) => (!open ? closeConfirm() : null)}>
+      <AlertDialog
+        open={Boolean(stakePreview)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeConfirm();
+          }
+        }}
+      >
         <AlertDialogContent className="bg-slate-950 border-slate-800 text-white">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-lg">Confirmer le staking</AlertDialogTitle>
@@ -539,7 +570,7 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
             <AlertDialogAction
               className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 disabled:opacity-40"
               onClick={confirmStake}
-              disabled={Boolean(pendingStake)}
+              disabled={!!pendingStake}
             >
               Confirmer
             </AlertDialogAction>
@@ -547,7 +578,14 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={Boolean(resultModal)} onOpenChange={(open) => (!open ? setResultModal(null) : null)}>
+      <Dialog
+        open={Boolean(resultModal)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setResultModal(null);
+          }
+        }}
+      >
         <DialogContent className="bg-slate-950 border-slate-800 text-white">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">

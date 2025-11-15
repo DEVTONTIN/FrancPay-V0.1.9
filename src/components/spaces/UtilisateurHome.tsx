@@ -231,7 +231,9 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
           filter: `authUserId=eq.${authUserId}`,
         },
         (payload) => {
-          const balanceValue = payload.new?.balanceFre ?? payload.old?.balanceFre;
+          const balanceRecordNew = payload.new as { balanceFre?: number } | null;
+          const balanceRecordOld = payload.old as { balanceFre?: number } | null;
+          const balanceValue = balanceRecordNew?.balanceFre ?? balanceRecordOld?.balanceFre;
           if (balanceValue === undefined || balanceValue === null) return;
           setBalanceFre(Number(balanceValue));
         }
