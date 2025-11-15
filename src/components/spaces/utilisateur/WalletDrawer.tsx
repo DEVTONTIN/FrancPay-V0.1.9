@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { TRANSFER_FEE_LABEL } from '@/config/fees';
 
 interface WalletDrawerProps {
   open: boolean;
@@ -75,6 +76,9 @@ export const WalletDrawer: React.FC<WalletDrawerProps> = ({
               Impossible de signer la transaction. Merci de reessayer.
             </div>
           )}
+          <p className="text-xs text-slate-500">
+            Frais fixe de {TRANSFER_FEE_LABEL} appliqué pour chaque envoi via TON.
+          </p>
           <div className="flex gap-3">
             <Button className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-semibold" onClick={onConfirm}>
               Confirmer l'envoi

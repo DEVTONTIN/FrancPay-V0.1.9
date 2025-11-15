@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { TRANSFER_FEE_LABEL } from '@/config/fees';
 
 interface ContactDrawerProps {
   open: boolean;
@@ -75,6 +76,9 @@ export const ContactDrawer: React.FC<ContactDrawerProps> = ({
               Verifiez l'identifiant et reessayez.
             </div>
           )}
+          <p className="text-xs text-slate-500">
+            Frais fixe de {TRANSFER_FEE_LABEL} appliqué aux transferts entre utilisateurs.
+          </p>
           <div className="flex gap-3">
             <Button className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-semibold" onClick={onConfirm}>
               Confirmer l'envoi

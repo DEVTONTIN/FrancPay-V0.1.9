@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Award, Coins, Lock, RefreshCcw, ShieldCheck, Clock3, Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { TRANSFER_FEE_FRE, TRANSFER_FEE_LABEL } from '@/config/fees';
 
 type StakeProductRecord = {
   id: string;
@@ -211,10 +212,11 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
       });
       return;
     }
-    if (numericValue > balanceFre) {
+    const totalCost = numericValue + TRANSFER_FEE_FRE;
+    if (totalCost > balanceFre) {
       setFeedback({
         type: 'error',
-        message: 'Montant supérieur à votre solde disponible.',
+        message: `Montant supérieur à votre solde disponible après frais (${TRANSFER_FEE_LABEL}).`,
       });
       return;
     }
@@ -560,6 +562,7 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
                   Estimation: ~{formatNumber(computeDailyReward(stakePreview.amount, stakePreview.product.apyPercent))} FRE
                   / jour.
                 </p>
+                <p>Frais de service: {TRANSFER_FEE_LABEL} débités en complément du capital.</p>
               </div>
             </div>
           )}

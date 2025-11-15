@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Chrome, X } from 'lucide-react';
+import { AuthApiError } from '@supabase/supabase-js';
 
 type LoginDrawerProps = {
   open: boolean;
@@ -82,10 +83,18 @@ export const LoginDrawer: React.FC<LoginDrawerProps> = ({
       closeDrawer();
       onSuccess(profileType);
     } catch (error) {
+      let description =
+        error instanceof Error ? error.message : 'Réessaie dans un instant.';
+      if (
+        error instanceof AuthApiError &&
+        error.status === 400 &&
+        error.message?.toLowerCase().includes('email not confirmed')
+      ) {
+        description = 'Confirme ton email avant de te connecter.';
+      }
       toast({
         title: 'Connexion impossible',
-        description:
-          error instanceof Error ? error.message : 'Réessaie dans un instant.',
+        description,
         variant: 'destructive',
       });
     } finally {

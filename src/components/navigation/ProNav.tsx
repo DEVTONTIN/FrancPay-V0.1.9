@@ -1,6 +1,6 @@
-import { CreditCard, Users, BarChart3 } from 'lucide-react';
+import { CreditCard, Users, BarChart3, Settings2 } from 'lucide-react';
 
-type ProTab = 'clients' | 'dashboard' | 'encaissement';
+type ProTab = 'clients' | 'dashboard' | 'encaissement' | 'settings';
 
 interface ProNavProps {
   active: ProTab;
@@ -11,6 +11,7 @@ const proItems: Array<{ id: ProTab; label: string; icon: React.ReactNode }> = [
   { id: 'clients', label: 'Clients', icon: <Users className="h-4 w-4" /> },
   { id: 'dashboard', label: 'Board', icon: <BarChart3 className="h-4 w-4" /> },
   { id: 'encaissement', label: 'Encaisser', icon: <CreditCard className="h-4 w-4" /> },
+  { id: 'settings', label: 'Paramètres', icon: <Settings2 className="h-4 w-4" /> },
 ];
 
 export const ProNav: React.FC<ProNavProps> = ({ active, onChange }) => {

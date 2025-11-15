@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/hooks/use-toast';
+import type { PostgrestError } from '@supabase/supabase-js';
 import { UtilisateurHeader } from '@/components/spaces/utilisateur/UtilisateurHeader';
 import { UtilisateurHomeSection, TransactionDisplay } from '@/components/spaces/utilisateur/UtilisateurHomeSection';
 import { UtilisateurPaySection } from '@/components/spaces/utilisateur/UtilisateurPaySection';
-import { UtilisateurSettingsSection } from '@/components/spaces/utilisateur/UtilisateurSettingsSection';
+import { UtilisateurSettingsSection, ProfileFormState } from '@/components/spaces/utilisateur/UtilisateurSettingsSection';
 import { WalletDrawer } from '@/components/spaces/utilisateur/WalletDrawer';
 import { ContactDrawer } from '@/components/spaces/utilisateur/ContactDrawer';
 import { ShareDrawer } from '@/components/spaces/utilisateur/ShareDrawer';
@@ -13,6 +15,8 @@ import { UtilisateurInvestSection } from '@/components/spaces/utilisateur/Utilis
 import { TransactionHistoryPage } from '@/components/spaces/utilisateur/TransactionHistorySheet';
 import { TransactionDetailDrawer } from '@/components/spaces/utilisateur/TransactionDetailDrawer';
 import { SendFundsPage } from '@/components/spaces/utilisateur/SendFundsPage';
+import { UtilisateurProfilePage } from '@/components/spaces/utilisateur/UtilisateurProfilePage';
+import { TRANSFER_FEE_FRE } from '@/config/fees';
 import {
   formatFreAmount,
   formatTransactionTitle,
@@ -20,6 +24,7 @@ import {
   SupabaseTransactionRow,
   TransactionDetail,
 } from '@/components/spaces/utilisateur/transaction-utils';
+import { generateReferralCodeFromId } from '@/lib/referral';
 
 type UtilisateurSection = 'home' | 'invest' | 'settings' | 'pay';
 
@@ -44,12 +49,15 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   onSendOpen,
   onSendClose,
 }) => {
+  const { toast } = useToast();
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [username, setUsername] = useState<string>('');
   const [profileEmail, setProfileEmail] = useState<string>('');
   const [referralCode, setReferralCode] = useState<string>('');
   const [balanceFre, setBalanceFre] = useState<number>(0);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [transfersLocked, setTransfersLocked] = useState(false);
+  const [transferLockReason, setTransferLockReason] = useState('');
 
   const [walletDrawerOpen, setWalletDrawerOpen] = useState(false);
   const [walletStatus, setWalletStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -69,6 +77,25 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
+  const [profilePageOpen, setProfilePageOpen] = useState(false);
+  const defaultProfileDetails: ProfileFormState = useMemo(
+    () => ({
+      firstName: '',
+      lastName: '',
+      birthDate: '',
+      email: '',
+      phoneNumber: '',
+      addressLine1: '',
+      addressLine2: '',
+      postalCode: '',
+      city: '',
+      country: '',
+    }),
+    []
+  );
+  const [profileDetails, setProfileDetails] = useState<ProfileFormState>(defaultProfileDetails);
+  const profileSelectColumns =
+    'username,referralCode,email,firstName,lastName,birthDate,phoneNumber,addressLine1,addressLine2,postalCode,city,country';
 
   const mapTransactionRow = useCallback((tx: SupabaseTransactionRow): TransactionDisplay => {
     const amountValue = Number(tx.amountFre) || 0;
@@ -79,6 +106,67 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       createdAt: tx.createdAt,
     };
   }, []);
+
+  const ensureProfileRecord = useCallback(
+    async (sessionUser: { id: string; email?: string | null; user_metadata?: Record<string, any> | undefined }) => {
+      if (!sessionUser?.id) return null;
+      const usernameMeta =
+        typeof sessionUser.user_metadata?.username === 'string' ? sessionUser.user_metadata.username : undefined;
+      const fallbackSeed =
+        usernameMeta ||
+        sessionUser.email?.split('@')[0] ||
+        `francpay_${sessionUser.id.replace(/-/g, '').slice(0, 6)}`;
+      const normalizeUsername = (value: string) => {
+        const trimmed = value.trim().replace(/\s+/g, '_');
+        const sanitized = trimmed.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_');
+        const bounded = sanitized.slice(0, 20).replace(/^_+|_+$/g, '');
+        if (bounded) return bounded;
+        return `francpay_${Math.random().toString(36).slice(2, 6)}`;
+      };
+      const fallbackBase = normalizeUsername(fallbackSeed);
+      const fallbackEmail = sessionUser.email || `${fallbackBase}@users.francpay.local`;
+      const referredByCode =
+        typeof sessionUser.user_metadata?.referral_code === 'string'
+          ? sessionUser.user_metadata?.referral_code.toUpperCase()
+          : null;
+      const buildPayload = (usernameCandidate: string) => ({
+        authUserId: sessionUser.id,
+        username: usernameCandidate,
+        email: fallbackEmail,
+        profileType: 'UTILISATEUR' as const,
+        referralCode: generateReferralCodeFromId(sessionUser.id),
+        referredByCode,
+      });
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const candidate =
+          attempt === 0
+            ? fallbackBase
+            : normalizeUsername(`${fallbackBase}_${Math.random().toString(36).slice(2, 6)}`);
+        const { data, error } = await supabase
+          .from('UserProfile')
+          .insert(buildPayload(candidate))
+          .select(profileSelectColumns)
+          .maybeSingle();
+        if (!error) {
+          return data;
+        }
+        const pgError = error as PostgrestError;
+        if (pgError.code !== '23505') {
+          console.error('ensure_profile_error', pgError);
+          break;
+        }
+      }
+
+      const { data: existing } = await supabase
+        .from('UserProfile')
+        .select(profileSelectColumns)
+        .eq('authUserId', sessionUser.id)
+        .maybeSingle();
+      return existing || null;
+    },
+    [profileSelectColumns]
+  );
 
   const refreshProfile = useCallback(async () => {
     setIsProfileLoading(true);
@@ -93,12 +181,20 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       setTransactions([]);
       setTransactionsLoading(false);
       transactionsLoadedRef.current = false;
+      setProfileDetails(defaultProfileDetails);
+      setTransfersLocked(false);
+      setTransferLockReason('');
       setIsProfileLoading(false);
       return;
     }
 
     setAuthUserId(session.user.id);
     setProfileEmail(session.user.email || '');
+    const emailConfirmed = Boolean(session.user.email_confirmed_at || session.user.confirmed_at);
+    setTransfersLocked(!emailConfirmed);
+    setTransferLockReason(
+      emailConfirmed ? '' : 'Valide ton email pour activer les envois vers les utilisateurs FrancPay ou via TON.'
+    );
 
     if (!transactionsLoadedRef.current) {
       setTransactionsLoading(true);
@@ -109,7 +205,11 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       { data: balanceData, error: balanceError },
       { data: txData, error: txError },
     ] = await Promise.all([
-      supabase.from('UserProfile').select('username, referralCode').eq('authUserId', session.user.id).maybeSingle(),
+      supabase
+        .from('UserProfile')
+        .select(profileSelectColumns)
+        .eq('authUserId', session.user.id)
+        .maybeSingle(),
       supabase.from('UserWalletBalance').select('balanceFre').eq('authUserId', session.user.id).maybeSingle(),
       supabase
         .from('UserPaymentTransaction')
@@ -119,15 +219,49 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
         .limit(5),
     ]);
 
+    let resolvedProfile = profileData;
     if (profileError) {
       console.error('Erreur profil', profileError);
-    } else if (profileData) {
-      if (profileData.username) {
-        setUsername(profileData.username);
+    }
+    if (!resolvedProfile) {
+      resolvedProfile = await ensureProfileRecord(session.user);
+    }
+    if (resolvedProfile) {
+      if (resolvedProfile.username) {
+        setUsername(resolvedProfile.username);
       }
-      if (profileData.referralCode) {
-        setReferralCode(profileData.referralCode);
+      let referralValue = resolvedProfile.referralCode;
+      if (!referralValue) {
+        const fallbackReferralCode = generateReferralCodeFromId(session.user.id);
+        const { data: updatedReferral, error: referralUpdateError } = await supabase
+          .from('UserProfile')
+          .update({ referralCode: fallbackReferralCode })
+          .eq('authUserId', session.user.id)
+          .select('referralCode')
+          .maybeSingle();
+        if (referralUpdateError) {
+          console.error('Erreur assignation referral', referralUpdateError);
+        }
+        referralValue = updatedReferral?.referralCode || fallbackReferralCode;
       }
+      setReferralCode(referralValue);
+      const resolvedEmail = resolvedProfile.email || session.user.email || `${session.user.id.slice(0, 6)}@users.francpay.local`;
+      setProfileEmail(resolvedEmail);
+      setProfileDetails({
+        firstName: resolvedProfile.firstName ?? '',
+        lastName: resolvedProfile.lastName ?? '',
+        birthDate: resolvedProfile.birthDate ?? '',
+        email: resolvedEmail,
+        phoneNumber: resolvedProfile.phoneNumber ?? '',
+        addressLine1: resolvedProfile.addressLine1 ?? '',
+        addressLine2: resolvedProfile.addressLine2 ?? '',
+        postalCode: resolvedProfile.postalCode ?? '',
+        city: resolvedProfile.city ?? '',
+        country: resolvedProfile.country ?? '',
+      });
+    } else {
+      const fallbackEmail = session.user.email || `${session.user.id.slice(0, 6)}@users.francpay.local`;
+      setProfileEmail(fallbackEmail);
     }
 
     if (balanceError) {
@@ -148,17 +282,22 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       transactionsLoadedRef.current = true;
     }
     setIsProfileLoading(false);
-  }, [mapTransactionRow]);
+  }, [mapTransactionRow, ensureProfileRecord]);
 
   useEffect(() => {
     refreshProfile();
   }, [refreshProfile]);
 
   const handlePersistTransaction = useCallback(
-    async (payload: { type: 'merchant' | 'wallet' | 'contact'; target: string; amount: string; fee?: string }) => {
+    async (payload: {
+      type: 'merchant' | 'wallet' | 'contact';
+      target: string;
+      amount: string;
+      fee?: string | number;
+    }) => {
       if (!authUserId) return;
       const amountValue = Number(payload.amount) || 0;
-      const feeValue = payload.fee ? Number(payload.fee) || 0 : 0;
+      const feeValue = payload.fee !== undefined ? Number(payload.fee) || 0 : 0;
 
       const { error } = await supabase.from('UserPaymentTransaction').insert({
         authUserId,
@@ -194,6 +333,7 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       type: 'wallet',
       target: walletForm.address || 'wallet-ton',
       amount: walletForm.amount || '0',
+      fee: TRANSFER_FEE_FRE,
     });
     setWalletStatus('success');
   };
@@ -312,6 +452,8 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     setBalanceFre(0);
     setTransactions([]);
     setTransactionsLoading(false);
+    transactionsLoadedRef.current = false;
+    setProfileDetails(defaultProfileDetails);
   }, []);
 
   useEffect(() => {
@@ -325,6 +467,28 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const handleManualDepositRefresh = useCallback(() => {
     refreshProfile();
   }, [refreshProfile]);
+
+  const handleOpenSendPage = useCallback(() => {
+    if (transfersLocked) {
+      toast({
+        title: 'Envoi verrouillé',
+        description: transferLockReason || 'Valide ton email pour débloquer cette action.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    onSendOpen();
+  }, [transfersLocked, transferLockReason, onSendOpen, toast]);
+
+  useEffect(() => {
+    if (transfersLocked) {
+      setContactDrawerOpen(false);
+      setWalletDrawerOpen(false);
+      if (sendVisible) {
+        onSendClose();
+      }
+    }
+  }, [transfersLocked, sendVisible, onSendClose]);
 
   const openTransactionDetail = useCallback(
     async (transactionId: string, preset?: TransactionDetail) => {
@@ -359,12 +523,61 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     []
   );
 
-  const closeTransactionDetail = useCallback(() => {
-    setDetailDrawerOpen(false);
-    setDetailTransaction(null);
-    setDetailError(null);
-    setDetailTargetId(null);
-  }, []);
+const closeTransactionDetail = useCallback(() => {
+  setDetailDrawerOpen(false);
+  setDetailTransaction(null);
+  setDetailError(null);
+  setDetailTargetId(null);
+}, []);
+
+  const handleProfileSave = useCallback(
+    async (nextProfile: ProfileFormState) => {
+      if (!authUserId) {
+        return { success: false, message: 'Connexion requise.' };
+      }
+      const updatePayload = {
+        firstName: nextProfile.firstName || null,
+        lastName: nextProfile.lastName || null,
+        birthDate: nextProfile.birthDate || null,
+        phoneNumber: nextProfile.phoneNumber || null,
+        addressLine1: nextProfile.addressLine1 || null,
+        addressLine2: nextProfile.addressLine2 || null,
+        postalCode: nextProfile.postalCode || null,
+        city: nextProfile.city || null,
+        country: nextProfile.country || null,
+        email: nextProfile.email || null,
+        updatedAt: new Date().toISOString(),
+      };
+      const { data, error } = await supabase
+        .from('UserProfile')
+        .update(updatePayload)
+        .eq('authUserId', authUserId)
+        .select(profileSelectColumns)
+        .maybeSingle();
+      if (error) {
+        console.error('profile_update_error', error);
+        return { success: false, message: 'Impossible de mettre à jour le profil.' };
+      }
+      const normalized: ProfileFormState = {
+        firstName: data?.firstName ?? '',
+        lastName: data?.lastName ?? '',
+        birthDate: data?.birthDate ?? '',
+        email: data?.email ?? '',
+        phoneNumber: data?.phoneNumber ?? '',
+        addressLine1: data?.addressLine1 ?? '',
+        addressLine2: data?.addressLine2 ?? '',
+        postalCode: data?.postalCode ?? '',
+        city: data?.city ?? '',
+        country: data?.country ?? '',
+      };
+      setProfileDetails(normalized);
+      if (normalized.email) {
+        setProfileEmail(normalized.email);
+      }
+      return { success: true, message: 'Profil mis à jour.' };
+    },
+    [authUserId]
+  );
 
   const handleHistoryTransactionSelect = useCallback(
     (tx: TransactionDetail) => {
@@ -393,7 +606,9 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
               onShowHistory={onHistoryOpen}
               onSelectTransaction={(id) => openTransactionDetail(id)}
               onOpenSettings={() => onChangeSection?.('settings')}
-              onOpenSendPage={onSendOpen}
+              onOpenSendPage={handleOpenSendPage}
+              sendDisabled={transfersLocked}
+              sendDisabledReason={transferLockReason}
             />
           )}
 
@@ -415,8 +630,10 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
             <UtilisateurSettingsSection
               profileName={username || 'FrancPay'}
               profileEmail={profileEmail}
+              profileDetails={profileDetails}
               onLogoutConfirm={handleLogoutConfirm}
               logoutPending={logoutPending}
+              onOpenProfilePage={() => setProfilePageOpen(true)}
             />
           )}
       </div>
@@ -427,6 +644,15 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
         authUserId={authUserId}
         onClose={onHistoryClose}
         onSelectTransaction={handleHistoryTransactionSelect}
+      />
+
+      <UtilisateurProfilePage
+        open={profilePageOpen}
+        onClose={() => setProfilePageOpen(false)}
+        profileName={username || 'FrancPay'}
+        profileEmail={profileEmail}
+        profileDetails={profileDetails}
+        onSaveProfile={handleProfileSave}
       />
 
       <SendFundsPage
@@ -472,7 +698,6 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
         onClose={() => setDepositDrawerOpen(false)}
         depositTag={depositTag}
         onManualRefresh={handleManualDepositRefresh}
-        onDeposited={refreshProfile}
       />
     </>
   );

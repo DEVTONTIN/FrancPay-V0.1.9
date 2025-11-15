@@ -20,6 +20,8 @@ interface UtilisateurHomeSectionProps {
   onSelectTransaction?: (transactionId: string) => void;
   onOpenSettings?: () => void;
   onOpenSendPage?: () => void;
+  sendDisabled?: boolean;
+  sendDisabledReason?: string;
 }
 
 const quickActions = [
@@ -38,6 +40,8 @@ export const UtilisateurHomeSection: React.FC<UtilisateurHomeSectionProps> = ({
   onSelectTransaction,
   onOpenSettings,
   onOpenSendPage,
+  sendDisabled = false,
+  sendDisabledReason,
 }) => {
   const resolveHandler = (actionId: (typeof quickActions)[number]['id']) => {
     switch (actionId) {
@@ -58,22 +62,32 @@ export const UtilisateurHomeSection: React.FC<UtilisateurHomeSectionProps> = ({
     <>
       <div className="mt-6 grid grid-cols-4 gap-4 px-2">
         {quickActions.map((action) => {
-          const handleClick = resolveHandler(action.id);
+          const isSendAction = action.id === 'send';
+          const disabled = isSendAction && sendDisabled;
+          const handleClick = disabled ? undefined : resolveHandler(action.id);
           return (
             <button
               key={action.label}
               type={handleClick ? 'button' : undefined}
               onClick={handleClick}
-              className="flex flex-col items-center gap-1 text-[8px] text-slate-300 tracking-wide focus:outline-none"
+              className={`flex flex-col items-center gap-1 text-[8px] tracking-wide focus:outline-none ${
+                disabled ? 'text-slate-600 cursor-not-allowed' : 'text-slate-300'
+              }`}
+              aria-disabled={disabled}
             >
               <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center">
-                <action.icon className="h-5 w-5 text-white" />
+                <action.icon className={`h-5 w-5 ${disabled ? 'text-slate-600' : 'text-white'}`} />
               </div>
               <span>{action.label}</span>
             </button>
           );
         })}
       </div>
+      {sendDisabled && (
+        <div className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[11px] text-amber-100">
+          {sendDisabledReason || 'Valide ton email pour débloquer les transferts vers les utilisateurs ou via TON.'}
+        </div>
+      )}
 
       <Card className="bg-slate-900/80 border-slate-800 rounded-3xl">
         <CardContent className="p-4 space-y-3">

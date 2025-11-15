@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { Loader2, Chrome, ArrowLeft } from 'lucide-react';
+import { AuthApiError } from '@supabase/supabase-js';
 
 type SignupPageProps = {
   profileType: 'utilisateur' | 'professional';
@@ -56,10 +57,15 @@ export const SignupPage: React.FC<SignupPageProps> = ({
     }
     try {
       setLoading(true);
-      const { data, error } = await supabase.auth.signUp({
+      const redirectTo = `${window.location.origin}/auth/callback?space=${
+        profileType === 'utilisateur' ? 'utilisateur' : 'professional'
+      }`;
+
+      const { error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
         options: {
+          emailRedirectTo: redirectTo,
           data: {
             profile_type: profileType,
             username: form.username,
@@ -70,39 +76,24 @@ export const SignupPage: React.FC<SignupPageProps> = ({
       });
       if (error) throw error;
 
-      const authUserId = data.user?.id;
-      if (authUserId) {
-        const fallbackUsername =
-          form.username || form.email.split('@')[0] || `francpay_${authUserId.slice(0, 6)}`;
-        const { error: profileError } = await supabase
-          .from('UserProfile')
-          .upsert(
-            {
-              authUserId,
-              username: fallbackUsername,
-              email: form.email,
-              profileType: profileType === 'utilisateur' ? 'UTILISATEUR' : 'PROFESSIONAL',
-              referralCode: form.referralCode || null,
-              referredByCode: form.referralCode || null,
-            },
-            { onConflict: 'authUserId' }
-          );
-        if (profileError && profileError.code !== '23505') {
-          console.error('Signup profile error', profileError);
-          throw profileError;
-        }
-      }
-
       toast({
-        title: 'Compte créé',
-        description: "Un email de validation t'a été envoyé. Vérifie-le pour accéder librement à FrancPay.",
+        title: 'Compte cree',
+        description:
+          'Un email de confirmation t a ete envoye. Valide-le avant de te connecter.',
         duration: 8000,
       });
       onSuccess(profileType);
     } catch (error) {
+      let description =
+        error instanceof Error ? error.message : 'Ressaie dans un instant.';
+      if (error instanceof AuthApiError) {
+        if (error.status === 429) {
+          description = 'Trop de tentatives. Patiente quelques minutes.';
+        }
+      }
       toast({
         title: 'Inscription impossible',
-        description: error instanceof Error ? error.message : 'Ressaie dans un instant.',
+        description,
         variant: 'destructive',
       });
     } finally {

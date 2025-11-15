@@ -13,6 +13,14 @@ import { ProNav } from '@/components/navigation/ProNav';
 import { UtilisateurHome } from '@/components/spaces/UtilisateurHome';
 import { ProfessionalSpace } from '@/components/spaces/ProfessionalSpace';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Home, ArrowLeft } from 'lucide-react';
 import { AuthCallback } from '@/components/auth/AuthCallback';
 import { supabase } from '@/lib/supabaseClient';
@@ -25,13 +33,14 @@ type AppView = 'landing' | 'space-selector' | 'utilisateur' | 'professional';
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [utilisateurSection, setUtilisateurSection] = useState<'home' | 'invest' | 'pay' | 'settings'>('home');
-  const [proSection, setProSection] = useState<'clients' | 'dashboard' | 'encaissement'>('dashboard');
+  const [proSection, setProSection] = useState<'clients' | 'dashboard' | 'encaissement' | 'settings'>('dashboard');
   const [isSignupOpen, setIsSignupOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [signupProfile, setSignupProfile] =
     useState<'utilisateur' | 'professional' | null>(null);
   const [historyVisible, setHistoryVisible] = useState(false);
   const [sendVisible, setSendVisible] = useState(false);
+  const [verificationDialogOpen, setVerificationDialogOpen] = useState(false);
   const { isConnected } = useTonWallet();
 
   useEffect(() => {
@@ -237,17 +246,37 @@ const AppContent: React.FC = () => {
         <SignupPage
           profileType={signupProfile}
           onClose={() => setSignupProfile(null)}
-          onSuccess={(type) => {
-            if (type === 'utilisateur') {
-              setCurrentView('utilisateur');
-              setUtilisateurSection('home');
-            } else {
-              setCurrentView('professional');
-            }
+          onSuccess={(_type) => {
             setSignupProfile(null);
+            setIsLoginOpen(true);
+            setVerificationDialogOpen(true);
           }}
         />
       )}
+
+      <Dialog
+        modal={false}
+        open={verificationDialogOpen}
+        onOpenChange={setVerificationDialogOpen}
+      >
+        <DialogContent className="bg-slate-950 text-white border-slate-800">
+          <DialogHeader>
+            <DialogTitle>Confirme ton email</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Un lien de validation vient de t etre envoye. Valide ton adresse
+              email pour pouvoir te connecter a FrancPay.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              className="bg-emerald-500 hover:bg-emerald-400 text-white"
+              onClick={() => setVerificationDialogOpen(false)}
+            >
+              J ai compris
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

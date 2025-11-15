@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, UserRound, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { TRANSFER_FEE_LABEL } from '@/config/fees';
 
 interface SendFundsPageProps {
   visible: boolean;
@@ -75,8 +76,8 @@ export const SendFundsPage: React.FC<SendFundsPageProps> = ({ visible, onClose, 
         </div>
 
         <div className="rounded-3xl border border-slate-800 bg-slate-900/50 p-4 text-sm text-slate-400">
-          Les transferts utilisateur → utilisateur sont gratuits. Les envois via TON utilisent ton wallet connecté ou une
-          adresse manuelle.
+          Chaque envoi applique un frais fixe de {TRANSFER_FEE_LABEL}, que ce soit vers un utilisateur, un commerçant ou
+          une adresse TON. Vérifie toujours ton montant et l'adresse avant validation.
         </div>
       </div>
     </div>

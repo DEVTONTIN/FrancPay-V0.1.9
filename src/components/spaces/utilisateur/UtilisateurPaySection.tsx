@@ -5,9 +5,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { Store, Scan, CheckCircle2 } from 'lucide-react';
+import { TRANSFER_FEE_FRE, TRANSFER_FEE_LABEL } from '@/config/fees';
 
 interface UtilisateurPaySectionProps {
-  onPersistTransaction: (payload: { type: 'merchant'; target: string; amount: string; fee?: string }) => Promise<void>;
+  onPersistTransaction: (payload: {
+    type: 'merchant';
+    target: string;
+    amount: string;
+    fee?: string | number;
+  }) => Promise<void>;
 }
 
 export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ onPersistTransaction }) => {
@@ -67,7 +73,7 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
       type: 'merchant',
       target: merchantDetails.reference,
       amount: merchantDetails.amount,
-      fee: '0.15 FRE',
+      fee: TRANSFER_FEE_FRE,
     });
     setMerchantDrawerStatus('success');
   };
@@ -105,7 +111,9 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
               <div className="flex-1 space-y-1">
                 <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300">Flux FrancPay</p>
                 <p className="text-base font-semibold text-white">Scanner ou saisir un code</p>
-                <p className="text-xs text-slate-400">Paiement instantané, frais fixes.</p>
+                <p className="text-xs text-slate-400">
+                  Paiement instantané, frais fixe de {TRANSFER_FEE_LABEL}.
+                </p>
               </div>
             </div>
           </button>
@@ -192,6 +200,10 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
             <p className="text-white font-mono">{merchantDetails?.reference}</p>
             <p className="text-slate-400">Montant</p>
             <p className="text-2xl font-semibold text-emerald-400">{merchantDetails?.amount || '0'} FRE</p>
+            <div>
+              <p className="text-slate-400">Frais</p>
+              <p className="text-sm text-slate-200">{TRANSFER_FEE_LABEL}</p>
+            </div>
             {merchantDetails?.tag && (
               <>
                 <p className="text-slate-400">Tag</p>

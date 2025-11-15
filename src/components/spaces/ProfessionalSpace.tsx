@@ -4,36 +4,30 @@ import {
   Users,
   CreditCard,
   BarChart3,
-  ArrowRight,
+  Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useTonWallet } from '@/hooks/useTonWallet';
-import { QRCodeGenerator } from '@/components/wallet/QRCodeGenerator';
-import { POSInterface } from '@/components/pos/POSInterface';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { supabase } from '@/lib/supabaseClient';
+import { ProfessionalDashboardSection } from '@/components/spaces/professional/ProfessionalDashboardSection';
+import { ProfessionalClientsSection } from '@/components/spaces/professional/ProfessionalClientsSection';
+import { ProfessionalEncaissementSection } from '@/components/spaces/professional/ProfessionalEncaissementSection';
+import { ProfessionalSettingsSection } from '@/components/spaces/professional/ProfessionalSettingsSection';
 
-type ProSection = 'dashboard' | 'clients' | 'encaissement';
+type ProSection = 'dashboard' | 'clients' | 'encaissement' | 'settings';
 
 interface ProfessionalSpaceProps {
   activeSection?: ProSection;
   onSectionChange?: (section: ProSection) => void;
 }
-
-const mockStats = {
-  recentActivity: [
-    { type: 'Paiement', amount: 150, customer: 'tw_abc123', time: '15:42' },
-    { type: 'Paiement', amount: 89.5, customer: 'tw_def456', time: '15:38' },
-    { type: 'Remboursement', amount: 45, customer: 'tw_ghi789', time: '15:20' },
-  ],
-  topClients: [
-    { name: 'Service Premium', sales: 45, revenue: 4500 },
-    { name: 'Pack Découverte', sales: 32, revenue: 1600 },
-    { name: 'Formation Express', sales: 28, revenue: 2800 },
-  ],
-};
 
 export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
   activeSection,
@@ -58,6 +52,19 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
     encaissement.amount && Number(encaissement.amount) > 0
       ? generatePaymentLink(parseFloat(encaissement.amount), encaissement.memo)
       : '';
+
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+
+  const handleConfirmLogout = async () => {
+    try {
+      setLogoutPending(true);
+      await supabase.auth.signOut();
+    } finally {
+      setLogoutPending(false);
+      setLogoutDialogOpen(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white px-4 py-10 pb-28 md:pb-10">
@@ -84,6 +91,7 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
             { id: 'clients', label: 'Clients', icon: Users },
             { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3 },
             { id: 'encaissement', label: 'Encaissement', icon: CreditCard },
+            { id: 'settings', label: 'Paramètres', icon: Settings2 },
           ].map((item) => {
             const Icon = item.icon;
             const active = currentSection === item.id;
@@ -104,158 +112,50 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
           })}
         </div>
 
-        {currentSection === 'dashboard' && <DashboardSection />}
-        {currentSection === 'clients' && <ClientsSection />}
+        {currentSection === 'dashboard' && <ProfessionalDashboardSection />}
+        {currentSection === 'clients' && <ProfessionalClientsSection />}
         {currentSection === 'encaissement' && (
-          <EncaissementSection
+          <ProfessionalEncaissementSection
             encaissement={encaissement}
             setEncaissement={setEncaissement}
             paymentLink={paymentLink}
           />
         )}
+        {currentSection === 'settings' && (
+          <ProfessionalSettingsSection
+            onRequestLogout={() => setLogoutDialogOpen(true)}
+            logoutPending={logoutPending}
+          />
+        )}
       </div>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent className="bg-slate-950 text-white border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmer la déconnexion</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              Cette action fermera votre session FrancPay Business sur cet appareil.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              className="border-slate-700 text-white"
+              onClick={() => setLogoutDialogOpen(false)}
+              disabled={logoutPending}
+            >
+              Annuler
+            </Button>
+            <Button
+              className="bg-red-500 text-white hover:bg-red-600"
+              onClick={handleConfirmLogout}
+              disabled={logoutPending}
+            >
+              {logoutPending ? 'Déconnexion...' : 'Confirmer'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
-
-const DashboardSection = () => (
-  <div className="space-y-6">
-    <div className="grid md:grid-cols-3 gap-4">
-      {[
-        { label: 'Chiffre du jour', value: '2 847 FRE', trend: '+12% / 24h' },
-        { label: 'Transactions', value: '18', trend: '3 en attente' },
-        { label: 'Conversion', value: '87.5%', trend: 'Pic 14h-15h' },
-      ].map((stat) => (
-        <Card key={stat.label} className="bg-slate-900/70 border-slate-800">
-          <CardHeader>
-            <CardTitle className="text-sm text-slate-400">{stat.label}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">{stat.value}</p>
-            <p className="text-xs text-emerald-400">{stat.trend}</p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-    <Card className="bg-slate-900/70 border-slate-800">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-emerald-400" />
-          Activité récente
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {mockStats.recentActivity.map((activity, index) => (
-          <div
-            key={index}
-            className="flex justify-between border-b border-slate-800 pb-2 text-sm last:border-b-0"
-          >
-            <div>
-              <p className="font-semibold">{activity.type}</p>
-              <p className="text-slate-400">{activity.customer}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-emerald-400">{activity.amount} FRE</p>
-              <p className="text-xs text-slate-500">{activity.time}</p>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  </div>
-);
-
-const ClientsSection = () => (
-  <Card className="bg-slate-900/70 border-slate-800">
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
-        <Users className="h-5 w-5 text-emerald-400" />
-        Clients FrancPay
-      </CardTitle>
-      <p className="text-slate-400 text-sm">
-        Fidélisez vos meilleurs clients et exportez la base CRM.
-      </p>
-    </CardHeader>
-    <CardContent className="grid gap-4 md:grid-cols-2">
-      {mockStats.topClients.map((client) => (
-        <div key={client.name} className="rounded-xl border border-slate-800 p-4 bg-slate-900/40">
-          <div className="flex justify-between">
-            <div>
-              <p className="font-semibold">{client.name}</p>
-              <p className="text-sm text-slate-400">{client.sales} transactions</p>
-            </div>
-            <Badge variant="secondary" className="text-emerald-400 border-emerald-400/20">
-              {client.revenue} FRE
-            </Badge>
-          </div>
-          <Button variant="outline" className="w-full mt-3 border-slate-700 text-white">
-            Voir le dossier
-          </Button>
-        </div>
-      ))}
-    </CardContent>
-  </Card>
-);
-
-type EncaissementProps = {
-  encaissement: { amount: string; memo: string };
-  setEncaissement: React.Dispatch<
-    React.SetStateAction<{ amount: string; memo: string }>
-  >;
-  paymentLink: string;
-};
-
-const EncaissementSection: React.FC<EncaissementProps> = ({
-  encaissement,
-  setEncaissement,
-  paymentLink,
-}) => (
-  <Card className="bg-slate-900/70 border-slate-800">
-    <CardHeader>
-      <CardTitle className="flex items-center gap-2">
-        <CreditCard className="h-5 w-5 text-emerald-400" />
-        Encaissement instantané
-      </CardTitle>
-      <p className="text-slate-400 text-sm">
-        Créez des liens, QRs et utilisez le POS intégré.
-      </p>
-    </CardHeader>
-    <CardContent className="grid gap-6 md:grid-cols-2">
-      <div className="space-y-3">
-        <Label>Montant (FRE)</Label>
-        <Input
-          value={encaissement.amount}
-          onChange={(e) =>
-            setEncaissement((prev) => ({ ...prev, amount: e.target.value }))
-          }
-          placeholder="Ex: 150"
-          className="bg-slate-900/40 border-slate-800"
-        />
-        <Label>Memo</Label>
-        <Input
-          value={encaissement.memo}
-          onChange={(e) =>
-            setEncaissement((prev) => ({ ...prev, memo: e.target.value }))
-          }
-          placeholder="Référence interne / client"
-          className="bg-slate-900/40 border-slate-800"
-        />
-        <Button
-          className="w-full bg-emerald-500 hover:bg-emerald-400"
-          disabled={!paymentLink}
-          onClick={() => paymentLink && navigator.clipboard.writeText(paymentLink)}
-        >
-          Copier le lien d’encaissement
-        </Button>
-      </div>
-      <div className="space-y-4">
-        <QRCodeGenerator
-          paymentLink={paymentLink}
-          amount={encaissement.amount ? parseFloat(encaissement.amount) : undefined}
-          memo={encaissement.memo || undefined}
-        />
-        <POSInterface />
-      </div>
-    </CardContent>
-  </Card>
-);
