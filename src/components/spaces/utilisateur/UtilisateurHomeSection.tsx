@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowRightLeft, Info, Share2, Plus } from 'lucide-react';
+import { ArrowRightLeft, Share2, Plus, Settings } from 'lucide-react';
 import { formatFreAmount } from '@/components/spaces/utilisateur/transaction-utils';
 
 export interface TransactionDisplay {
@@ -18,12 +18,15 @@ interface UtilisateurHomeSectionProps {
   onDeposit?: () => void;
   onShowHistory?: () => void;
   onSelectTransaction?: (transactionId: string) => void;
+  onOpenSettings?: () => void;
+  onOpenSendPage?: () => void;
 }
 
 const quickActions = [
   { id: 'deposit' as const, label: 'Ajouter', icon: Plus },
-  { id: 'move' as const, label: 'Deplacer', icon: ArrowRightLeft },
-  { id: 'info' as const, label: 'Infos', icon: Info },
+  { id: 'send' as const, label: 'Envoyer', icon: ArrowRightLeft },
+  { id: 'share' as const, label: 'Partager', icon: Share2 },
+  { id: 'settings' as const, label: 'Paramètres', icon: Settings },
 ];
 
 export const UtilisateurHomeSection: React.FC<UtilisateurHomeSectionProps> = ({
@@ -33,31 +36,35 @@ export const UtilisateurHomeSection: React.FC<UtilisateurHomeSectionProps> = ({
   onDeposit,
   onShowHistory,
   onSelectTransaction,
+  onOpenSettings,
+  onOpenSendPage,
 }) => {
+  const resolveHandler = (actionId: (typeof quickActions)[number]['id']) => {
+    switch (actionId) {
+      case 'deposit':
+        return onDeposit;
+      case 'send':
+        return onOpenSendPage;
+      case 'share':
+        return onShare;
+      case 'settings':
+        return onOpenSettings;
+      default:
+        return undefined;
+    }
+  };
+
   return (
     <>
-      <div className="mt-6 flex justify-between gap-4 px-2">
-        <button
-          type="button"
-          onClick={onShare}
-          className="flex flex-col items-center gap-1 text-[8px] text-slate-300 tracking-wide focus:outline-none"
-        >
-          <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center">
-            <Share2 className="h-5 w-5 text-white" />
-          </div>
-          <span>Partager</span>
-        </button>
+      <div className="mt-6 grid grid-cols-4 gap-4 px-2">
         {quickActions.map((action) => {
-          const handleClick =
-            action.id === 'deposit'
-              ? onDeposit
-              : undefined;
+          const handleClick = resolveHandler(action.id);
           return (
             <button
               key={action.label}
               type={handleClick ? 'button' : undefined}
               onClick={handleClick}
-              className="flex flex-col items-center gap-1 text-[8px] text-slate-400 tracking-wide focus:outline-none"
+              className="flex flex-col items-center gap-1 text-[8px] text-slate-300 tracking-wide focus:outline-none"
             >
               <div className="w-12 h-12 rounded-full bg-slate-900 flex items-center justify-center">
                 <action.icon className="h-5 w-5 text-white" />

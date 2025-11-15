@@ -4,45 +4,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
-import { Store, UserRound, Wallet, Scan, CheckCircle2 } from 'lucide-react';
-
-type PayAction = 'merchant' | 'contact' | 'wallet';
+import { Store, Scan, CheckCircle2 } from 'lucide-react';
 
 interface UtilisateurPaySectionProps {
-  onOpenContactDrawer: () => void;
-  onOpenWalletDrawer: () => void;
   onPersistTransaction: (payload: { type: 'merchant'; target: string; amount: string; fee?: string }) => Promise<void>;
 }
 
-const payOptions = [
-  {
-    id: 'merchant' as PayAction,
-    badge: 'Payer un commercant',
-    title: 'Flux FrancPay',
-    description: 'Scanner un QR ou saisir un code',
-    icon: Store,
-  },
-  {
-    id: 'contact' as PayAction,
-    badge: 'Transfert utilisateur',
-    title: 'Contact FrancPay',
-    description: 'Envoyer vers @identifiant',
-    icon: UserRound,
-  },
-  {
-    id: 'wallet' as PayAction,
-    badge: 'Envoyer vers',
-    title: 'Wallet TON',
-    description: 'Adresse publique TON',
-    icon: Wallet,
-  },
-];
-
-export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({
-  onOpenContactDrawer,
-  onOpenWalletDrawer,
-  onPersistTransaction,
-}) => {
+export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ onPersistTransaction }) => {
   const [merchantPage, setMerchantPage] = useState(false);
   const [merchantCodeInput, setMerchantCodeInput] = useState('');
   const [merchantAmount, setMerchantAmount] = useState('');
@@ -54,22 +22,14 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({
   const [merchantDrawerStatus, setMerchantDrawerStatus] = useState<'idle' | 'success'>('idle');
   const [merchantCodeError, setMerchantCodeError] = useState('');
 
-  const handleOptionSelect = (action: PayAction) => {
-    if (action === 'merchant') {
-      setMerchantPage(true);
-      setMerchantCodeInput('');
-      setMerchantAmount('');
-      setMerchantTag('');
-      setMerchantDetails(null);
-      setMerchantDrawerStatus('idle');
-      setMerchantCodeError('');
-      return;
-    }
-    if (action === 'contact') {
-      onOpenContactDrawer();
-    } else if (action === 'wallet') {
-      onOpenWalletDrawer();
-    }
+  const openMerchantFlow = () => {
+    setMerchantPage(true);
+    setMerchantCodeInput('');
+    setMerchantAmount('');
+    setMerchantTag('');
+    setMerchantDetails(null);
+    setMerchantDrawerStatus('idle');
+    setMerchantCodeError('');
   };
 
   const openMerchantDrawer = (context: { name: string; reference: string; amount: string; tag?: string }) => {
@@ -126,168 +86,130 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({
   return (
     <>
       <section className="space-y-4">
-        {!merchantPage ? (
-          <Card className="bg-slate-900/80 border-slate-800 rounded-3xl">
-            <CardContent className="p-4 space-y-4">
-              <p className="text-sm font-semibold text-white">Choisir une action</p>
-              <div className="grid gap-3 text-sm">
-                {payOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => handleOptionSelect(option.id)}
-                    className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-3 text-left hover:bg-slate-900/70 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-full bg-slate-900/70 p-2">
-                        <option.icon className="h-4 w-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{option.badge}</p>
-                        <p className="mt-1 text-white font-semibold">{option.title}</p>
-                        <p className="text-[11px] text-slate-400">{option.description}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+        <div className="text-center space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Payer un commercant</p>
+          <h2 className="text-2xl font-semibold text-white">Flux FrancPay</h2>
+          <p className="text-sm text-slate-400">Scanne un QR ou saisie un code pour regler un commerçant FrancPay.</p>
+        </div>
+
+        <div className="grid gap-3">
+          <button
+            type="button"
+            onClick={openMerchantFlow}
+            className="rounded-3xl border border-slate-800 bg-slate-900/60 p-4 text-left transition duration-200 hover:border-emerald-500/50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-2xl bg-slate-950/80 p-3">
+                <Store className="h-6 w-6 text-emerald-400" />
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <button type="button" className="text-xs uppercase tracking-[0.3em] text-slate-500" onClick={closeMerchantPage}>
-                  Retour
-                </button>
-                <p className="text-lg font-semibold text-white mt-2">Payer un commercant</p>
-                <p className="text-[11px] text-slate-400">
-                  Utilisez le QR FrancPay ou saisissez un code commercant pour generer la transaction.
-                </p>
+              <div className="flex-1 space-y-1">
+                <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-300">Flux FrancPay</p>
+                <p className="text-base font-semibold text-white">Scanner ou saisir un code</p>
+                <p className="text-xs text-slate-400">Paiement instantané, frais fixes.</p>
               </div>
             </div>
-
-            <Card className="bg-slate-900/80 border-slate-800 rounded-3xl">
-              <CardContent className="p-4 space-y-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 text-center space-y-2">
-                  <Scan className="mx-auto h-10 w-10 text-emerald-400" />
-                  <p className="text-sm font-semibold text-white">QR FrancPay</p>
-                  <p className="text-xs text-slate-400">
-                    Placez le QR du commercant dans le cadre pour preparer votre paiement.
-                  </p>
-                  <Button className="rounded-full bg-emerald-500/90 text-slate-900 font-semibold" onClick={handleMerchantScan}>
-                    Simuler le scan
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Code commercant</Label>
-                  <Input
-                    value={merchantCodeInput}
-                    onChange={(e) => setMerchantCodeInput(e.target.value)}
-                    placeholder="0000000000"
-                    className="bg-slate-950/60 border-slate-800 text-white"
-                  />
-                  {merchantCodeError && <p className="text-xs text-red-300">{merchantCodeError}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Montant (FRE)</Label>
-                  <Input
-                    value={merchantAmount}
-                    onChange={(e) => setMerchantAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="bg-slate-950/60 border-slate-800 text-white"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Tag / Reference (optionnel)</Label>
-                  <Input
-                    value={merchantTag}
-                    onChange={(e) => setMerchantTag(e.target.value)}
-                    placeholder="Ex: #commande-1024"
-                    className="bg-slate-950/60 border-slate-800 text-white"
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <Button variant="outline" className="flex-1 rounded-2xl border-slate-700 text-white" onClick={handleMerchantCodeSubmit}>
-                    Utiliser le code
-                  </Button>
-                  <Button className="flex-1 rounded-2xl bg-emerald-500/90 text-slate-900 font-semibold" onClick={handleMerchantScan}>
-                    Valider via QR
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+          </button>
+        </div>
       </section>
 
-      <Drawer
-        open={merchantDrawerOpen}
-        onOpenChange={(open) => {
-          setMerchantDrawerOpen(open);
-          if (!open) setMerchantDrawerStatus('idle');
-        }}
-      >
-        <DrawerContent className="h-[70vh] bg-slate-950 text-white border-slate-800">
-          <DrawerHeader className="text-left">
-            <DrawerTitle>Confirmation du paiement</DrawerTitle>
-            <DrawerDescription className="text-slate-400">
-              Verifiez les informations avant de valider votre paiement FrancPay.
-            </DrawerDescription>
+      {merchantPage && (
+        <section className="mt-6 space-y-4">
+          <div className="flex items-center justify-between text-sm text-slate-400">
+            <button type="button" className="text-emerald-300" onClick={closeMerchantPage}>
+              ← Retour
+            </button>
+            <span>Flux FrancPay</span>
+          </div>
+
+          <Card className="bg-slate-900/80 border-slate-800 rounded-3xl">
+            <CardContent className="p-4 space-y-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 text-center space-y-2">
+                <Scan className="mx-auto h-10 w-10 text-emerald-400" />
+                <p className="text-sm font-semibold text-white">QR FrancPay</p>
+                <p className="text-xs text-slate-400">
+                  Place le QR du commercant dans le cadre pour préparer ton paiement.
+                </p>
+                <Button className="rounded-full bg-emerald-500/90 text-slate-900 font-semibold" onClick={handleMerchantScan}>
+                  Simuler le scan
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase tracking-[0.35em] text-slate-400">Code commerçant</Label>
+                <Input
+                  inputMode="numeric"
+                  value={merchantCodeInput}
+                  onChange={(event) => setMerchantCodeInput(event.target.value)}
+                  placeholder="1234567890"
+                  className="border-slate-800 bg-slate-950 text-white"
+                  maxLength={10}
+                />
+                {merchantCodeError && <p className="text-[11px] text-red-400">{merchantCodeError}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase tracking-[0.35em] text-slate-400">Montant (FRE)</Label>
+                <Input
+                  inputMode="decimal"
+                  value={merchantAmount}
+                  onChange={(event) => setMerchantAmount(event.target.value)}
+                  placeholder="0.00"
+                  className="border-slate-800 bg-slate-950 text-white"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase tracking-[0.35em] text-slate-400">Tag optionnel</Label>
+                <Input
+                  value={merchantTag}
+                  onChange={(event) => setMerchantTag(event.target.value)}
+                  placeholder="FRP-123"
+                  className="border-slate-800 bg-slate-950 text-white"
+                />
+              </div>
+
+              <Button
+                className="w-full rounded-2xl bg-emerald-500 text-slate-900 font-semibold"
+                onClick={handleMerchantCodeSubmit}
+              >
+                Continuer
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      )}
+
+      <Drawer open={merchantDrawerOpen} onOpenChange={setMerchantDrawerOpen}>
+        <DrawerContent className="bg-slate-950 text-white border-slate-900">
+          <DrawerHeader>
+            <DrawerTitle>Paiement commerçant</DrawerTitle>
+            <DrawerDescription>Vérifie les informations avant de confirmer le paiement.</DrawerDescription>
           </DrawerHeader>
-          <div className="px-4 py-4 space-y-4">
-            {merchantDetails ? (
+          <div className="px-4 space-y-3 text-sm">
+            <p className="text-slate-400">Nom</p>
+            <p className="text-white font-semibold">{merchantDetails?.name}</p>
+            <p className="text-slate-400">Référence</p>
+            <p className="text-white font-mono">{merchantDetails?.reference}</p>
+            <p className="text-slate-400">Montant</p>
+            <p className="text-2xl font-semibold text-emerald-400">{merchantDetails?.amount || '0'} FRE</p>
+            {merchantDetails?.tag && (
               <>
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4 space-y-2">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Commercant</p>
-                  <p className="text-lg font-semibold text-white">{merchantDetails.name}</p>
-                  <p className="text-xs text-slate-400">Reference {merchantDetails.reference}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Montant</p>
-                      <p className="text-xl font-semibold text-white">{merchantDetails.amount} FRE</p>
-                    </div>
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Tag</p>
-                    <p className="text-sm text-white">{merchantDetails.tag ?? 'Aucun'}</p>
-                  </div>
-                </div>
-                {merchantDrawerStatus === 'success' && (
-                  <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-100 flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5" />
-                    Paiement enregistre et notifie au commercant.
-                  </div>
-                )}
-                <div className="flex gap-3">
-                  <Button
-                    className="flex-1 rounded-2xl bg-emerald-500 text-slate-900 font-semibold"
-                    onClick={handleMerchantSuccess}
-                    disabled={merchantDrawerStatus === 'success'}
-                  >
-                    Confirmer le paiement
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 rounded-2xl border-slate-700 text-white"
-                    onClick={() => {
-                      setMerchantDrawerOpen(false);
-                      setMerchantDrawerStatus('idle');
-                    }}
-                  >
-                    Modifier
-                  </Button>
-                </div>
+                <p className="text-slate-400">Tag</p>
+                <p className="text-white">{merchantDetails.tag}</p>
               </>
+            )}
+            {merchantDrawerStatus === 'success' ? (
+              <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/50 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                <CheckCircle2 className="h-4 w-4" />
+                Paiement enregistré.
+              </div>
             ) : (
-              <p className="text-sm text-slate-400">Selectionnez un QR ou un code avant de confirmer.</p>
+              <Button className="w-full rounded-2xl bg-emerald-500 text-slate-900 font-semibold" onClick={handleMerchantSuccess}>
+                Confirmer le paiement
+              </Button>
             )}
           </div>
-          <DrawerClose className="absolute top-4 right-4 text-slate-500 hover:text-white">X</DrawerClose>
+          <DrawerClose className="absolute top-4 right-4 text-slate-500 hover:text-white">Fermer</DrawerClose>
         </DrawerContent>
       </Drawer>
     </>

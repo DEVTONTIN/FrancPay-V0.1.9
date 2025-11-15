@@ -12,6 +12,7 @@ import { useOnchainDepositSync } from '@/hooks/useOnchainDepositSync';
 import { UtilisateurInvestSection } from '@/components/spaces/utilisateur/UtilisateurInvestSection';
 import { TransactionHistoryPage } from '@/components/spaces/utilisateur/TransactionHistorySheet';
 import { TransactionDetailDrawer } from '@/components/spaces/utilisateur/TransactionDetailDrawer';
+import { SendFundsPage } from '@/components/spaces/utilisateur/SendFundsPage';
 import {
   formatFreAmount,
   formatTransactionTitle,
@@ -24,9 +25,25 @@ type UtilisateurSection = 'home' | 'invest' | 'settings' | 'pay';
 
 interface UtilisateurHomeProps {
   activeSection: UtilisateurSection;
+  onChangeSection?: (section: UtilisateurSection) => void;
+  historyVisible: boolean;
+  onHistoryOpen: () => void;
+  onHistoryClose: () => void;
+  sendVisible: boolean;
+  onSendOpen: () => void;
+  onSendClose: () => void;
 }
 
-export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection }) => {
+export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
+  activeSection,
+  onChangeSection,
+  historyVisible,
+  onHistoryOpen,
+  onHistoryClose,
+  sendVisible,
+  onSendOpen,
+  onSendClose,
+}) => {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [username, setUsername] = useState<string>('');
   const [profileEmail, setProfileEmail] = useState<string>('');
@@ -46,7 +63,6 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
   const [logoutPending, setLogoutPending] = useState(false);
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
-  const [historyPageVisible, setHistoryPageVisible] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [detailTransaction, setDetailTransaction] = useState<TransactionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -367,15 +383,15 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
               isLoading={transactionsLoading}
               onShare={() => setShareDrawerOpen(true)}
               onDeposit={() => setDepositDrawerOpen(true)}
-              onShowHistory={() => setHistoryPageVisible(true)}
+              onShowHistory={onHistoryOpen}
               onSelectTransaction={(id) => openTransactionDetail(id)}
+              onOpenSettings={() => onChangeSection?.('settings')}
+              onOpenSendPage={onSendOpen}
             />
           )}
 
           {activeSection === 'pay' && (
             <UtilisateurPaySection
-              onOpenContactDrawer={() => setContactDrawerOpen(true)}
-              onOpenWalletDrawer={() => setWalletDrawerOpen(true)}
               onPersistTransaction={handlePersistTransaction}
             />
           )}
@@ -400,10 +416,17 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
     </div>
 
       <TransactionHistoryPage
-        visible={historyPageVisible}
+        visible={historyVisible}
         authUserId={authUserId}
-        onClose={() => setHistoryPageVisible(false)}
+        onClose={onHistoryClose}
         onSelectTransaction={handleHistoryTransactionSelect}
+      />
+
+      <SendFundsPage
+        visible={sendVisible}
+        onClose={onSendClose}
+        onSendUser={() => setContactDrawerOpen(true)}
+        onSendTon={() => setWalletDrawerOpen(true)}
       />
 
       <TransactionDetailDrawer

@@ -30,6 +30,8 @@ const AppContent: React.FC = () => {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [signupProfile, setSignupProfile] =
     useState<'utilisateur' | 'professional' | null>(null);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [sendVisible, setSendVisible] = useState(false);
   const { isConnected } = useTonWallet();
 
   useEffect(() => {
@@ -180,12 +182,28 @@ const AppContent: React.FC = () => {
         <SpaceSelector onSelectSpace={handleSelectSpace} />
       )}
 
-      {currentView === 'utilisateur' && <UtilisateurHome activeSection={utilisateurSection} />}
+      {currentView === 'utilisateur' && (
+        <UtilisateurHome
+          activeSection={utilisateurSection}
+          onChangeSection={setUtilisateurSection}
+          historyVisible={historyVisible}
+          onHistoryOpen={() => setHistoryVisible(true)}
+          onHistoryClose={() => setHistoryVisible(false)}
+          sendVisible={sendVisible}
+          onSendOpen={() => setSendVisible(true)}
+          onSendClose={() => setSendVisible(false)}
+        />
+      )}
       
       {currentView === 'professional' && <ProfessionalSpace activeSection={proSection} onSectionChange={setProSection} />}
 
       {currentView === 'utilisateur' && (
-        <MobileNav active={utilisateurSection} onChange={setUtilisateurSection} />
+        <MobileNav
+          active={utilisateurSection}
+          onChange={setUtilisateurSection}
+          onHistory={() => setHistoryVisible(true)}
+          historyActive={historyVisible}
+        />
       )}
       {currentView === 'professional' && (
         <ProNav active={proSection} onChange={setProSection} />
