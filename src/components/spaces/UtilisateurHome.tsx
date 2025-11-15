@@ -45,6 +45,20 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
 
+  const mapTransactionRow = useCallback((tx: SupabaseTransactionRow): TransactionDisplay => {
+    return {
+      id: tx.id,
+      title:
+        tx.context === 'merchant'
+          ? `Paiement ${tx.counterparty}`
+          : tx.context === 'wallet'
+          ? `Wallet ${tx.counterparty}`
+          : `Transfert ${tx.counterparty}`,
+      amount: Number(tx.amountFre) || 0,
+      createdAt: tx.createdAt,
+    };
+  }, []);
+
   const refreshProfile = useCallback(async () => {
     setIsProfileLoading(true);
     const {
@@ -102,24 +116,12 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
       console.error('Erreur transactions', txError);
       setTransactions([]);
     } else if (txData) {
-      setTransactions(
-        txData.map((tx: SupabaseTransactionRow) => ({
-          id: tx.id,
-          title:
-            tx.context === 'merchant'
-              ? `Paiement ${tx.counterparty}`
-              : tx.context === 'wallet'
-              ? `Wallet ${tx.counterparty}`
-              : `Transfert ${tx.counterparty}`,
-          amount: Number(tx.amountFre) || 0,
-          createdAt: tx.createdAt,
-        }))
-      );
+      setTransactions(txData.map(mapTransactionRow));
     }
 
     setTransactionsLoading(false);
     setIsProfileLoading(false);
-  }, []);
+  }, [mapTransactionRow]);
 
   useEffect(() => {
     refreshProfile();
@@ -213,6 +215,62 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
     enabled: Boolean(authUserId),
     onDeposit: refreshProfile,
   });
+
+  useEffect(() => {
+    if (!authUserId) return;
+
+    const channel = supabase
+      .channel(`utilisateur-home-${authUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'UserWalletBalance',
+          filter: `authUserId=eq.${authUserId}`,
+        },
+        (payload) => {
+          const balanceValue = payload.new?.balanceFre ?? payload.old?.balanceFre;
+          if (balanceValue === undefined || balanceValue === null) return;
+          setBalanceFre(Number(balanceValue));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'UserPaymentTransaction',
+          filter: `authUserId=eq.${authUserId}`,
+        },
+        (payload) => {
+          const updatedRow = (payload.new || payload.old) as SupabaseTransactionRow | null;
+          if (!updatedRow) return;
+
+          setTransactions((prev) => {
+            if (payload.eventType === 'DELETE') {
+              return prev.filter((tx) => tx.id !== updatedRow.id);
+            }
+
+            const nextTx = mapTransactionRow(updatedRow);
+            const withoutCurrent = prev.filter((tx) => tx.id !== nextTx.id);
+            const merged =
+              payload.eventType === 'UPDATE'
+                ? [nextTx, ...withoutCurrent]
+                : [nextTx, ...prev];
+            return merged
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .slice(0, 5);
+          });
+          setTransactionsLoading(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authUserId, mapTransactionRow]);
 
   const handleLogoutConfirm = useCallback(async () => {
     setLogoutPending(true);
