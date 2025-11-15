@@ -42,6 +42,11 @@ enum WalletConnectionStatus {
   REVOKED
 }
 
+enum ProfileType {
+  UTILISATEUR
+  PROFESSIONAL
+}
+
 model Company {
   id                 String             @id @default(uuid())
   name               String
@@ -243,4 +248,17 @@ model AuditLog {
 
   @@index([companyId])
   @@index([userId])
+}
+
+model UserProfile {
+  id           String      @id @default(uuid())
+  authUserId   String      @unique
+  username     String      @unique
+  email        String      @unique
+  profileType  ProfileType
+  referralCode String?
+  createdAt    DateTime    @default(now())
+
+  @@index([profileType])
+  @@index([email])
 }

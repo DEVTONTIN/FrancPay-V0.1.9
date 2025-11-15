@@ -1,0 +1,8 @@
+{
+  "url": "https://towallet.site",
+  "name": "FrancPay",
+  "iconUrl": "https://towallet.site/icon.png",
+  "bridge": {
+    "url": "https://bridge.tonapi.io/bridge"
+  }
+}

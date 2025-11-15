@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { AnimatedCard } from '@/components/ui/AnimatedCard';
 
 interface SpaceSelectorProps {
-  onSelectSpace: (space: 'personal' | 'professional') => void;
+  onSelectSpace: (space: 'utilisateur' | 'professional') => void;
 }
 
 export const SpaceSelector: React.FC<SpaceSelectorProps> = ({ onSelectSpace }) => {
@@ -61,7 +61,7 @@ export const SpaceSelector: React.FC<SpaceSelectorProps> = ({ onSelectSpace }) =
                   </div>
                 </div>
                 <Button 
-                  onClick={() => onSelectSpace('personal')}
+                  onClick={() => onSelectSpace('utilisateur')}
                   className="w-full bg-emerald-600 hover:bg-emerald-500"
                 >
                   Gestion des Fonds

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FrancPay logo">
+  <defs>
+    <linearGradient id="fp-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0fa18b"/>
+      <stop offset="100%" stop-color="#15c0a7"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="80" fill="#fdf7f0"/>
+  <path
+    d="M164 120h148c68 0 110 36 110 97 0 57-40 93-108 93h-98v82c0 44-26 72-72 72H84V192c0-48 32-72 80-72zM216 252h92c20 0 32-10 32-30 0-18-12-27-32-27h-92v57z"
+    fill="url(#fp-gradient)"/>
+  <text x="240" y="360" font-family="Inter, Segoe UI, Arial" font-size="140" font-weight="600" fill="#0f1f3d">F</text>
+</svg>

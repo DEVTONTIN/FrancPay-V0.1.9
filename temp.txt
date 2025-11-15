@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Building2,
   Users,
   CreditCard,
   BarChart3,
   ArrowRight,
+  BadgePercent,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,14 +17,7 @@ import { useTonWallet } from '@/hooks/useTonWallet';
 import { QRCodeGenerator } from '@/components/wallet/QRCodeGenerator';
 import { POSInterface } from '@/components/pos/POSInterface';
 
-type ProSection = 'dashboard' | 'clients' | 'encaissement';
-
-interface ProfessionalSpaceProps {
-  activeSection?: ProSection;
-  onSectionChange?: (section: ProSection) => void;
-}
-
-const mockStats = {
+const mockBusinessStats = {
   recentActivity: [
     { type: 'Paiement', amount: 150, customer: 'tw_abc123', time: '15:42' },
     { type: 'Paiement', amount: 89.5, customer: 'tw_def456', time: '15:38' },
@@ -35,24 +30,18 @@ const mockStats = {
   ],
 };
 
-export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
-  activeSection,
-  onSectionChange,
-}) => {
+const navItems = [
+  { id: 'clients', label: 'Clients', icon: Users },
+  { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3 },
+  { id: 'encaissement', label: 'Encaissement', icon: CreditCard },
+] as const;
+
+type ProSection = (typeof navItems)[number]['id'];
+
+export const ProfessionalSpace: React.FC = () => {
   const { generatePaymentLink } = useTonWallet();
-  const [internalSection, setInternalSection] =
-    useState<ProSection>('dashboard');
-  const currentSection = activeSection ?? internalSection;
-
-  const setSection = (section: ProSection) => {
-    if (onSectionChange) onSectionChange(section);
-    else setInternalSection(section);
-  };
-
-  const [encaissement, setEncaissement] = useState({
-    amount: '',
-    memo: '',
-  });
+  const [section, setSection] = useState<ProSection>('dashboard');
+  const [encaissement, setEncaissement] = useState({ amount: '', memo: '' });
 
   const paymentLink =
     encaissement.amount && Number(encaissement.amount) > 0
@@ -60,7 +49,7 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
       : '';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white px-4 py-10 pb-28 md:pb-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white px-4 py-10">
       <div className="max-w-6xl mx-auto space-y-8">
         <header className="space-y-3">
           <div className="flex items-center gap-3">
@@ -68,29 +57,25 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
               <Building2 className="h-6 w-6 text-white" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-emerald-400">
+              <p className="text-xs uppercase tracking-[0.4em] text-emerald-400">
                 Professionnel
               </p>
               <h1 className="text-3xl font-bold">Espace FrancPay Business</h1>
               <p className="text-slate-400 text-sm">
-                Suivez vos encaissements, clients et équipes.
+                Suivez vos encaissements, clients et équipes en FRE.
               </p>
             </div>
           </div>
         </header>
 
-        <div className="hidden md:flex gap-3">
-          {[
-            { id: 'clients', label: 'Clients', icon: Users },
-            { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3 },
-            { id: 'encaissement', label: 'Encaissement', icon: CreditCard },
-          ].map((item) => {
+        <div className="grid sm:grid-cols-3 gap-2">
+          {navItems.map((item) => {
             const Icon = item.icon;
-            const active = currentSection === item.id;
+            const active = section === item.id;
             return (
               <Button
                 key={item.id}
-                onClick={() => setSection(item.id as ProSection)}
+                onClick={() => setSection(item.id)}
                 className={`rounded-full text-sm ${
                   active
                     ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
@@ -104,9 +89,9 @@ export const ProfessionalSpace: React.FC<ProfessionalSpaceProps> = ({
           })}
         </div>
 
-        {currentSection === 'dashboard' && <DashboardSection />}
-        {currentSection === 'clients' && <ClientsSection />}
-        {currentSection === 'encaissement' && (
+        {section === 'dashboard' && <DashboardSection />}
+        {section === 'clients' && <ClientsSection />}
+        {section === 'encaissement' && (
           <EncaissementSection
             encaissement={encaissement}
             setEncaissement={setEncaissement}
@@ -145,7 +130,7 @@ const DashboardSection = () => (
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {mockStats.recentActivity.map((activity, index) => (
+        {mockBusinessStats.recentActivity.map((activity, index) => (
           <div
             key={index}
             className="flex justify-between border-b border-slate-800 pb-2 text-sm last:border-b-0"
@@ -172,12 +157,12 @@ const ClientsSection = () => (
         <Users className="h-5 w-5 text-emerald-400" />
         Clients FrancPay
       </CardTitle>
-      <p className="text-slate-400 text-sm">
+      <CardDescription>
         Fidélisez vos meilleurs clients et exportez la base CRM.
-      </p>
+      </CardDescription>
     </CardHeader>
     <CardContent className="grid gap-4 md:grid-cols-2">
-      {mockStats.topClients.map((client) => (
+      {mockBusinessStats.topClients.map((client) => (
         <div key={client.name} className="rounded-xl border border-slate-800 p-4 bg-slate-900/40">
           <div className="flex justify-between">
             <div>
@@ -216,9 +201,9 @@ const EncaissementSection: React.FC<EncaissementProps> = ({
         <CreditCard className="h-5 w-5 text-emerald-400" />
         Encaissement instantané
       </CardTitle>
-      <p className="text-slate-400 text-sm">
+      <CardDescription>
         Créez des liens, QRs et utilisez le POS intégré.
-      </p>
+      </CardDescription>
     </CardHeader>
     <CardContent className="grid gap-6 md:grid-cols-2">
       <div className="space-y-3">

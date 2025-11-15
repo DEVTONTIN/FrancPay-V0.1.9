@@ -20,10 +20,11 @@ Pour provisionner une nouvelle base Supabase, applique les migrations dans l'ord
 # Option 1 : via psql (recommande dans CI/CD)
 psql "$DATABASE_URL" -f prisma/migrations/202411140001_init/migration.sql
 psql "$DATABASE_URL" -f prisma/migrations/202411140002_wallet_connections/migration.sql
+psql "$DATABASE_URL" -f prisma/migrations/202411140003_user_profiles/migration.sql
 
 # Option 2 : via supabase CLI
 supabase db remote set "$DATABASE_URL"
-supabase db push --include prisma/migrations/202411140001_init/migration.sql,prisma/migrations/202411140002_wallet_connections/migration.sql
+supabase db push --include prisma/migrations/202411140001_init/migration.sql,prisma/migrations/202411140002_wallet_connections/migration.sql,prisma/migrations/202411140003_user_profiles/migration.sql
 ```
 
 Ensuite, genere le client Prisma (utile si on ajoute un backend Node) :
@@ -49,6 +50,7 @@ npx prisma generate
 | `WalletSession` | Sessions d'auth direct par wallet : token cote serveur, expiration, IP/User-Agent pour audit. |
 | `WebhookSecret` | Webhooks entreprise (URL + secret) pour notifier les SI externes. |
 | `AuditLog` | Tracabilite de toutes les actions sensibles (qui a fait quoi / quand / IP). |
+| `UserProfile` | Profils auth (username, email, type UTILISATEUR/PROFESSIONAL, parrainage). |
 
 Toutes les regles de securite Supabase (Row Level Security) devront etre ecrites pour chaque table afin de limiter les acces selon l'entreprise et le role utilisateur. Utilise les colonnes `companyId`, `userId` et `role` pour exprimer ces politiques.
 
@@ -119,3 +121,35 @@ En cas d'echec (signature invalide, domaine incorrect, etc.), la fonction renvoi
 3. Soumets la migration au repo, applique-la via `psql` ou la CLI Supabase, puis regenere le client Prisma.
 
 Tu disposes ainsi d'un historique versionne et reproductible pour toutes les evolutions de la base de donnees FrancPay.
+
+## 6. Row Level Security (RLS)
+
+Le script `supabase/rls-policies.sql` ajoute les fonctions utilitaires (`auth_company_id`, `auth_company_role`, `auth_user_id`), active RLS + `force row level security` et declare toutes les politiques :
+
+- restriction des lignes au `company_id` present dans le JWT (`auth.jwt()->>'company_id'`) ;
+- gestion des comptes/utilisateurs uniquement par `SUPER_ADMIN`/`COMPANY_ADMIN` ;
+- operations quotidiennes (`Wallet`, `Client`, `PaymentRequest`) ouvertes aux roles `MANAGER`/`OPERATOR` ;
+- `PaymentSettlement` / `PaymentStatusEvent` lisibles par l'entreprise, modifications reservees aux jobs service-role ;
+- `WalletConnection`/`WalletSession` : seuls les membres de l'entreprise (ou roles eleves) peuvent creer/lire leurs connexions TonConnect ;
+- `AuditLog` consultable uniquement par les roles eleves.
+
+Application :
+
+```bash
+psql "$DATABASE_URL" -f supabase/rls-policies.sql
+```
+
+⚠️ Assure-toi qu'au moment de l'authentification tu ajoutes dans les tokens Supabase les claims `company_id`, `role` et `sub` (CompanyUser.id). Sans ces metadonnees, toutes les requetes seront rejetees par les politiques RLS.
+
+## 7. Authentification email / Google
+
+Le portail `AuthPortal` utilise Supabase Auth (email+mot de passe + Google OAuth) et une page de callback `/auth/callback` pour finaliser la session. Pour que tout fonctionne :
+
+1. **Activer les providers** : dans Supabase → Auth → Providers → Active `Email` et `Google` (crée un OAuth Client ID/secret et colle les valeurs).
+2. **Redirect URLs** :
+   - Ajoute `https://towallet.site/auth/callback` (production) et `http://localhost:5173/auth/callback` (local) dans la liste des URLs de redirection autorisées.
+3. **Env vars front** : `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` doivent etre présents côté Netlify/Vercel.
+4. **Claims personnalisés** : après création de compte, mets à jour `auth.admin.updateUserById` (via Edge Function) pour remplir les claims JWT `company_id` / `role` requis par les politiques RLS.
+5. **Espace ciblé** : la page `/auth/callback` lit le paramètre `space` (`professional` ou `utilisateur`) puis redirige vers `/?space=...` et stocke la préférence `francpay_last_space`.
+
+Sans ces réglages, les formulaires de connexion resteront bloqués (erreurs 400/redirect refusé).
