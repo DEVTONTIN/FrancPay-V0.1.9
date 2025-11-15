@@ -210,3 +210,22 @@ create policy "audit_log_read" on "AuditLog"
     "companyId" = auth_company_id()
     and auth_company_role() in ('SUPER_ADMIN','COMPANY_ADMIN','MANAGER')
   );
+
+-- Staking products & positions (utilisateur space)
+alter table "StakeProduct" enable row level security;
+alter table "StakeProduct" force row level security;
+drop policy if exists "stake_product_read" on "StakeProduct";
+create policy "stake_product_read" on "StakeProduct"
+  for select using (true);
+
+alter table "UserStakePosition" enable row level security;
+alter table "UserStakePosition" force row level security;
+drop policy if exists "stake_position_read" on "UserStakePosition";
+create policy "stake_position_read" on "UserStakePosition"
+  for select using ("authUserId" = auth.uid());
+
+alter table "UserStakeLedger" enable row level security;
+alter table "UserStakeLedger" force row level security;
+drop policy if exists "stake_ledger_read" on "UserStakeLedger";
+create policy "stake_ledger_read" on "UserStakeLedger"
+  for select using ("authUserId" = auth.uid());

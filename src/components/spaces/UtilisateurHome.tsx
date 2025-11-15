@@ -9,6 +9,7 @@ import { ContactDrawer } from '@/components/spaces/utilisateur/ContactDrawer';
 import { ShareDrawer } from '@/components/spaces/utilisateur/ShareDrawer';
 import { DepositDrawer } from '@/components/spaces/utilisateur/DepositDrawer';
 import { useOnchainDepositSync } from '@/hooks/useOnchainDepositSync';
+import { UtilisateurInvestSection } from '@/components/spaces/utilisateur/UtilisateurInvestSection';
 
 type UtilisateurSection = 'home' | 'invest' | 'settings' | 'pay';
 
@@ -325,7 +326,11 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({ activeSection 
           )}
 
           {activeSection === 'invest' && (
-            <div className="text-center text-xs text-slate-500">Section Investir bientot disponible.</div>
+            <UtilisateurInvestSection
+              authUserId={authUserId}
+              balanceFre={balanceFre}
+              onRefreshWallet={refreshProfile}
+            />
           )}
 
           {activeSection === 'settings' && (
