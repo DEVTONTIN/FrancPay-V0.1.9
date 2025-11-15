@@ -16,7 +16,6 @@ import { TransactionHistoryPage } from '@/components/spaces/utilisateur/Transact
 import { TransactionDetailDrawer } from '@/components/spaces/utilisateur/TransactionDetailDrawer';
 import { SendFundsPage } from '@/components/spaces/utilisateur/SendFundsPage';
 import { UtilisateurProfilePage } from '@/components/spaces/utilisateur/UtilisateurProfilePage';
-import { TRANSFER_FEE_FRE } from '@/config/fees';
 import {
   formatFreAmount,
   formatTransactionTitle,
@@ -27,6 +26,16 @@ import {
 import { generateReferralCodeFromId } from '@/lib/referral';
 
 type UtilisateurSection = 'home' | 'invest' | 'settings' | 'pay';
+
+const formatSupabaseError = (error: unknown) => {
+  if (!error) return 'Une erreur inattendue est survenue.';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (typeof (error as { message?: string }).message === 'string') {
+    return (error as { message: string }).message;
+  }
+  return 'Impossible de valider cette operation.';
+};
 
 interface UtilisateurHomeProps {
   activeSection: UtilisateurSection;
@@ -60,11 +69,13 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const [transferLockReason, setTransferLockReason] = useState('');
 
   const [walletDrawerOpen, setWalletDrawerOpen] = useState(false);
-  const [walletStatus, setWalletStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [walletStatus, setWalletStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+  const [walletMessage, setWalletMessage] = useState<string | null>(null);
   const [walletForm, setWalletForm] = useState({ address: '', amount: '0', note: '' });
 
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
-  const [contactStatus, setContactStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [contactStatus, setContactStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+  const [contactFeedback, setContactFeedback] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState({ handle: '', amount: '0', note: '' });
   const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
@@ -288,83 +299,110 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     refreshProfile();
   }, [refreshProfile]);
 
-  const handlePersistTransaction = useCallback(
-    async (payload: {
-      type: 'merchant' | 'wallet' | 'contact';
-      target: string;
-      amount: string;
-      fee?: string | number;
-    }) => {
-      if (!authUserId) return;
+  const handleMerchantPayment = useCallback(
+    async (payload: { reference: string; amount: string; tag?: string; name?: string }) => {
       const amountValue = Number(payload.amount) || 0;
-      const feeValue = payload.fee !== undefined ? Number(payload.fee) || 0 : 0;
-
-      const { error } = await supabase.from('UserPaymentTransaction').insert({
-        authUserId,
-        context: payload.type,
-        counterparty: payload.target,
-        amountFre: amountValue,
-        feeFre: feeValue,
-      });
-
-      if (error) {
-        console.error('Erreur transaction', error);
-      } else {
+      if (!payload.reference || amountValue <= 0) {
+        return { success: false, message: 'Reference commercant ou montant invalide.' };
+      }
+      try {
+        const { error } = await supabase.rpc('rpc_user_merchant_payment', {
+          p_reference: payload.reference,
+          p_amount_fre: amountValue,
+          p_tag: payload.tag || null,
+          p_metadata: {
+            merchantName: payload.name,
+            initiatedFrom: 'utilisateur_app',
+          },
+        });
+        if (error) throw error;
         await refreshProfile();
+        return { success: true, message: 'Paiement commercant valide.' };
+      } catch (rpcError) {
+        console.error('merchant_payment_error', rpcError);
+        return { success: false, message: formatSupabaseError(rpcError) };
       }
     },
-    [authUserId, refreshProfile]
+    [refreshProfile]
   );
 
   const handleWalletClose = () => {
     setWalletDrawerOpen(false);
     setWalletStatus('idle');
+    setWalletMessage(null);
     setWalletForm({ address: '', amount: '0', note: '' });
   };
 
   const handleContactClose = () => {
     setContactDrawerOpen(false);
     setContactStatus('idle');
+    setContactFeedback(null);
     setContactForm({ handle: '', amount: '0', note: '' });
   };
 
-  const handleWalletConfirm = async () => {
-    await handlePersistTransaction({
-      type: 'wallet',
-      target: walletForm.address || 'wallet-ton',
-      amount: walletForm.amount || '0',
-      fee: TRANSFER_FEE_FRE,
-    });
-    setWalletStatus('success');
-  };
-
-  const handleWalletError = () => {
-    setWalletStatus('error');
-  };
-
-  const handleContactConfirm = useCallback(async () => {
-    if (!contactForm.handle || !contactForm.amount) {
-      setContactStatus('error');
+  const handleWalletConfirm = useCallback(async () => {
+    const amountValue = Number(walletForm.amount) || 0;
+    if (!walletForm.address || amountValue <= 0) {
+      setWalletStatus('error');
+      setWalletMessage('Indique une adresse TON valide et un montant positif.');
       return;
     }
     try {
-      setContactStatus('idle');
+      setWalletStatus('pending');
+      setWalletMessage(null);
+      const { error } = await supabase.rpc('rpc_user_wallet_payment', {
+        p_wallet_address: walletForm.address.trim(),
+        p_amount_fre: amountValue,
+        p_note: walletForm.note || null,
+        p_metadata: {
+          initiatedFrom: 'utilisateur_app',
+        },
+      });
+      if (error) throw error;
+      setWalletStatus('success');
+      setWalletMessage('Paiement transmis au wallet TON.');
+      await refreshProfile();
+    } catch (rpcError) {
+      console.error('wallet_payment_error', rpcError);
+      setWalletStatus('error');
+      setWalletMessage(formatSupabaseError(rpcError));
+    }
+  }, [walletForm.address, walletForm.amount, walletForm.note, refreshProfile]);
+
+  const handleWalletError = () => {
+    setWalletStatus('error');
+    setWalletMessage('Paiement annule.');
+  };
+
+  const handleContactConfirm = useCallback(async () => {
+    const amountValue = Number(contactForm.amount) || 0;
+    if (!contactForm.handle || amountValue <= 0) {
+      setContactStatus('error');
+      setContactFeedback('Identifiant et montant requis.');
+      return;
+    }
+    try {
+      setContactStatus('pending');
+      setContactFeedback(null);
       const { error } = await supabase.rpc('rpc_transfer_between_users', {
         p_handle: contactForm.handle,
-        p_amount: Number(contactForm.amount) || 0,
+        p_amount: amountValue,
         p_note: contactForm.note || null,
       });
       if (error) throw error;
       setContactStatus('success');
+      setContactFeedback('Transfert effectue et recu.');
       await refreshProfile();
     } catch (error) {
       console.error('Transfer contact error', error);
       setContactStatus('error');
+      setContactFeedback(formatSupabaseError(error));
     }
   }, [contactForm.handle, contactForm.amount, contactForm.note, refreshProfile]);
 
   const handleContactError = () => {
     setContactStatus('error');
+    setContactFeedback('Action annulee.');
   };
 
   const verifyContactHandle = useCallback(
@@ -630,11 +668,11 @@ const closeTransactionDetail = useCallback(() => {
             />
           )}
 
-          {activeSection === 'pay' && (
-            <UtilisateurPaySection
-              onPersistTransaction={handlePersistTransaction}
-            />
-          )}
+      {activeSection === 'pay' && (
+        <UtilisateurPaySection
+          onPersistTransaction={handleMerchantPayment}
+        />
+      )}
 
           {activeSection === 'invest' && (
             <UtilisateurInvestSection
@@ -693,6 +731,7 @@ const closeTransactionDetail = useCallback(() => {
         open={walletDrawerOpen}
         form={walletForm}
         status={walletStatus}
+        statusMessage={walletMessage}
         onChange={setWalletForm}
         onClose={handleWalletClose}
         onConfirm={handleWalletConfirm}
@@ -703,6 +742,7 @@ const closeTransactionDetail = useCallback(() => {
         open={contactDrawerOpen}
         form={contactForm}
         status={contactStatus}
+        statusMessage={contactFeedback}
         onChange={setContactForm}
         onClose={handleContactClose}
         onConfirm={handleContactConfirm}

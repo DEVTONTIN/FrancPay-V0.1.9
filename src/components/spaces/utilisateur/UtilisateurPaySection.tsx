@@ -7,13 +7,18 @@ import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, Dr
 import { Store, Scan, CheckCircle2 } from 'lucide-react';
 import { TRANSFER_FEE_FRE, TRANSFER_FEE_LABEL } from '@/config/fees';
 
+interface MerchantPersistResult {
+  success: boolean;
+  message?: string;
+}
+
 interface UtilisateurPaySectionProps {
   onPersistTransaction: (payload: {
-    type: 'merchant';
-    target: string;
+    reference: string;
     amount: string;
-    fee?: string | number;
-  }) => Promise<void>;
+    tag?: string;
+    name?: string;
+  }) => Promise<MerchantPersistResult>;
 }
 
 export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ onPersistTransaction }) => {
@@ -25,7 +30,8 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
     null
   );
   const [merchantDrawerOpen, setMerchantDrawerOpen] = useState(false);
-  const [merchantDrawerStatus, setMerchantDrawerStatus] = useState<'idle' | 'success'>('idle');
+  const [merchantDrawerStatus, setMerchantDrawerStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
+  const [merchantDrawerMessage, setMerchantDrawerMessage] = useState<string | null>(null);
   const [merchantCodeError, setMerchantCodeError] = useState('');
 
   const openMerchantFlow = () => {
@@ -35,12 +41,14 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
     setMerchantTag('');
     setMerchantDetails(null);
     setMerchantDrawerStatus('idle');
+    setMerchantDrawerMessage(null);
     setMerchantCodeError('');
   };
 
   const openMerchantDrawer = (context: { name: string; reference: string; amount: string; tag?: string }) => {
     setMerchantDetails(context);
     setMerchantDrawerStatus('idle');
+    setMerchantDrawerMessage(null);
     setMerchantDrawerOpen(true);
   };
 
@@ -69,13 +77,27 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
 
   const handleMerchantSuccess = async () => {
     if (!merchantDetails) return;
-    await onPersistTransaction({
-      type: 'merchant',
-      target: merchantDetails.reference,
-      amount: merchantDetails.amount,
-      fee: TRANSFER_FEE_FRE,
-    });
-    setMerchantDrawerStatus('success');
+    try {
+      setMerchantDrawerStatus('pending');
+      setMerchantDrawerMessage(null);
+      const result = await onPersistTransaction({
+        reference: merchantDetails.reference,
+        amount: merchantDetails.amount,
+        tag: merchantDetails.tag,
+        name: merchantDetails.name,
+      });
+      if (result.success) {
+        setMerchantDrawerStatus('success');
+        setMerchantDrawerMessage(result.message || 'Paiement commercant valide.');
+      } else {
+        setMerchantDrawerStatus('error');
+        setMerchantDrawerMessage(result.message || 'Le paiement commercant a echoue.');
+      }
+    } catch (error) {
+      console.error('merchant_drawer_confirm_error', error);
+      setMerchantDrawerStatus('error');
+      setMerchantDrawerMessage('Impossible de confirmer ce paiement.');
+    }
   };
 
   const closeMerchantPage = () => {
@@ -86,6 +108,7 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
     setMerchantDetails(null);
     setMerchantDrawerOpen(false);
     setMerchantDrawerStatus('idle');
+    setMerchantDrawerMessage(null);
     setMerchantCodeError('');
   };
 
@@ -210,14 +233,36 @@ export const UtilisateurPaySection: React.FC<UtilisateurPaySectionProps> = ({ on
                 <p className="text-white">{merchantDetails.tag}</p>
               </>
             )}
-            {merchantDrawerStatus === 'success' ? (
-              <div className="mt-4 flex items-center gap-2 rounded-2xl border border-emerald-500/50 bg-emerald-500/10 p-3 text-sm text-emerald-300">
-                <CheckCircle2 className="h-4 w-4" />
-                Paiement enregistré.
+            {merchantDrawerStatus === 'pending' && (
+              <div className="mt-4 flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-200">
+                <CheckCircle2 className="h-4 w-4 animate-pulse text-emerald-300" />
+                Paiement en cours de validation...
               </div>
-            ) : (
-              <Button className="w-full rounded-2xl bg-emerald-500 text-slate-900 font-semibold" onClick={handleMerchantSuccess}>
-                Confirmer le paiement
+            )}
+            {merchantDrawerStatus === 'success' && (
+              <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-emerald-500/50 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Paiement enregistré.
+                </div>
+                {merchantDrawerMessage && <p className="text-emerald-200">{merchantDrawerMessage}</p>}
+              </div>
+            )}
+            {merchantDrawerStatus === 'error' && (
+              <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-100">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Paiement refusé.
+                </div>
+                <p>{merchantDrawerMessage || 'Impossible de confirmer ce paiement.'}</p>
+              </div>
+            )}
+            {(merchantDrawerStatus === 'idle' || merchantDrawerStatus === 'error') && (
+              <Button
+                className="w-full rounded-2xl bg-emerald-500 text-slate-900 font-semibold"
+                onClick={handleMerchantSuccess}
+              >
+                {merchantDrawerStatus === 'error' ? 'Reessayer' : 'Confirmer le paiement'}
               </Button>
             )}
           </div>
