@@ -88,85 +88,87 @@ export const SendFundsPage: React.FC<SendFundsPageProps> = ({
     onClose();
   };
 
-  const handleSelectOption = (target: 'user' | 'ton') => {
-    setView(target);
-  };
+  const headerTitle =
+    view === 'user'
+      ? 'Transfert utilisateur'
+      : view === 'ton'
+      ? 'Envoi via TON'
+      : 'Envoyer des FRE';
 
-  const handleBackToOptions = () => {
-    setView('options');
+  const renderContent = () => {
+    if (view === 'user') {
+      return (
+        <SendUserForm
+          form={contactForm}
+          status={contactStatus}
+          statusMessage={contactStatusMessage}
+          onChange={onContactChange}
+          onConfirm={onContactConfirm}
+          onError={onContactError}
+          onValidateRecipient={onValidateRecipient}
+        />
+      );
+    }
+    if (view === 'ton') {
+      return (
+        <SendTonForm
+          form={walletForm}
+          status={walletStatus}
+          statusMessage={walletStatusMessage}
+          onChange={onWalletChange}
+          onConfirm={onWalletConfirm}
+          onError={onWalletError}
+        />
+      );
+    }
+    return <SendOptionGrid onSelect={(target) => setView(target)} />;
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950 text-white">
-      <AnimatePresence mode="wait">
-        {view === 'options' && (
-          <motion.div
-            key="send-options"
-            initial={{ y: '-25%', opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: '-10%', opacity: 0 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="flex h-full items-start justify-center px-4 py-8"
-          >
-            <div className="relative flex h-[70vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-900/80 px-5 py-4">
-                <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Envoyer</span>
-                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={handleClose}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex-1 overflow-y-auto px-5 py-6">
-                <SendOptionGrid onSelect={handleSelectOption} />
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {view === 'user' && (
-          <motion.div
-            key="send-user"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -40 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="h-full overflow-y-auto px-4 py-6"
-          >
-            <SendUserPage
-              form={contactForm}
-              status={contactStatus}
-              statusMessage={contactStatusMessage}
-              onChange={onContactChange}
-              onConfirm={onContactConfirm}
-              onError={onContactError}
-              onValidateRecipient={onValidateRecipient}
-              onBack={handleBackToOptions}
-              onClose={handleClose}
-            />
-          </motion.div>
-        )}
-
-        {view === 'ton' && (
-          <motion.div
-            key="send-ton"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -40 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="h-full overflow-y-auto px-4 py-6"
-          >
-            <SendTonPage
-              form={walletForm}
-              status={walletStatus}
-              statusMessage={walletStatusMessage}
-              onChange={onWalletChange}
-              onConfirm={onWalletConfirm}
-              onError={onWalletError}
-              onBack={handleBackToOptions}
-              onClose={handleClose}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="fixed inset-0 z-40 flex items-end bg-slate-950/70 backdrop-blur-sm text-white">
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="relative h-[70vh] w-full rounded-t-3xl border-t border-slate-800 bg-slate-950/95 shadow-2xl"
+      >
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b border-slate-900/80 px-5 py-4">
+            {view === 'options' ? (
+              <span className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Envoyer</span>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-slate-300 hover:text-white"
+                onClick={() => setView('options')}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Choix
+              </Button>
+            )}
+            <p className="text-sm font-semibold text-white">{headerTitle}</p>
+            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={handleClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-6">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={view}
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+                className="h-full"
+              >
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 };
@@ -215,11 +217,9 @@ interface SendUserPanelProps {
   onConfirm: () => void;
   onError: () => void;
   onValidateRecipient?: (handle: string) => Promise<boolean>;
-  onBack: () => void;
-  onClose: () => void;
 }
 
-const SendUserPage: React.FC<SendUserPanelProps> = ({
+const SendUserForm: React.FC<SendUserPanelProps> = ({
   form,
   status,
   statusMessage,
@@ -227,8 +227,6 @@ const SendUserPage: React.FC<SendUserPanelProps> = ({
   onConfirm,
   onError,
   onValidateRecipient,
-  onBack,
-  onClose,
 }) => {
   const [confirming, setConfirming] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
@@ -276,22 +274,11 @@ const SendUserPage: React.FC<SendUserPanelProps> = ({
 
   return (
     <>
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col space-y-6">
-        <div className="flex items-center justify-between border-b border-white/5 pb-4">
-          <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white" onClick={onBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Choix
-          </Button>
-          <p className="text-sm font-semibold text-slate-200">Transfert utilisateur</p>
-          <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+      <div className="mx-auto flex w-full max-w-2xl flex-col space-y-4 rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+        <div>
+          <h2 className="text-2xl font-semibold">Envoyer vers un utilisateur</h2>
+          <p className="text-sm text-slate-400">Selectionne le contact et confirme le montant du transfert.</p>
         </div>
-        <div className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
-          <div>
-            <h2 className="text-2xl font-semibold">Envoyer vers un utilisateur</h2>
-            <p className="text-sm text-slate-400">Selectionne le contact et confirme le montant du transfert.</p>
-          </div>
           <div className="space-y-2">
             <Label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Identifiant FrancPay</Label>
             <Input
@@ -353,7 +340,6 @@ const SendUserPage: React.FC<SendUserPanelProps> = ({
             {isSubmitting ? 'Envoi...' : "Confirmer l'envoi"}
           </Button>
         </div>
-      </div>
 
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent className="bg-slate-950 border-slate-800 text-white max-w-md w-[90vw] sm:w-[70vw]">
@@ -406,11 +392,9 @@ interface SendTonPanelProps {
   onChange: (form: { address: string; amount: string; note: string }) => void;
   onConfirm: () => void;
   onError: () => void;
-  onBack: () => void;
-  onClose: () => void;
 }
 
-const SendTonPage: React.FC<SendTonPanelProps> = ({ form, status, statusMessage, onChange, onConfirm, onError, onBack, onClose }) => {
+const SendTonForm: React.FC<SendTonPanelProps> = ({ form, status, statusMessage, onChange, onConfirm, onError }) => {
   const isPending = status === 'pending';
   const resolvedMessage =
     statusMessage ||
@@ -421,22 +405,11 @@ const SendTonPage: React.FC<SendTonPanelProps> = ({ form, status, statusMessage,
       : '');
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col space-y-6">
-      <div className="flex items-center justify-between border-b border-white/5 pb-4">
-        <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white" onClick={onBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Choix
-        </Button>
-        <p className="text-sm_font-semibold text-slate-200">Envoi via TON</p>
-        <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+    <div className="mx-auto flex w-full max-w-2xl flex-col space-y-4 rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
+      <div>
+        <h2 className="text-2xl font-semibold">Envoyer vers un wallet TON</h2>
+        <p className="text-sm text-slate-400">Confirme l adresse avant de lancer la signature sur TonConnect.</p>
       </div>
-      <div className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/60 p-6">
-        <div>
-          <h2 className="text-2xl font-semibold">Envoyer vers un wallet TON</h2>
-          <p className="text-sm text-slate-400">Confirme l adresse avant de lancer la signature sur TonConnect.</p>
-        </div>
         <div className="space-y-2">
           <Label className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Adresse TON</Label>
           <Input
@@ -502,7 +475,6 @@ const SendTonPage: React.FC<SendTonPanelProps> = ({ form, status, statusMessage,
             Marquer en echec
           </Button>
         </div>
-      </div>
     </div>
   );
 };

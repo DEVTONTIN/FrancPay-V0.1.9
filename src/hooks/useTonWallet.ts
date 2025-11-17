@@ -15,11 +15,11 @@ const defaultBalance: WalletBalance = { fre: 0, ton: 0 };
 export const useTonWallet = () => {
   const balance = useMemo(() => defaultBalance, []);
 
-  const sendPayment = useCallback(async () => {
+  const sendPayment = useCallback(async (_recipient?: string, _amount?: number, _memo?: string) => {
     throw new Error('TonConnect integration is disabled for now.');
   }, []);
 
-  const generatePaymentLink = useCallback(() => '', []);
+  const generatePaymentLink = useCallback((_amount?: number, _memo?: string) => '', []);
 
   return {
     wallet: null,
