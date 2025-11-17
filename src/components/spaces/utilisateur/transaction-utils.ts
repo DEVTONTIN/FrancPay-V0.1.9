@@ -8,7 +8,7 @@ export interface SupabaseTransactionRow {
   counterparty: string;
   amountFre: number | string;
   feeFre?: number | string | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -19,38 +19,43 @@ export interface TransactionDetail {
   amount: number;
   fee: number;
   createdAt: string;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
   category: TransactionCategory;
   direction: 'in' | 'out' | 'neutral';
   title: string;
 }
 
-const sanitizeMetadata = (metadata: unknown): Record<string, any> | null => {
+const sanitizeMetadata = (metadata: unknown): Record<string, unknown> | null => {
   if (!metadata) return null;
   if (Array.isArray(metadata)) return null;
   if (typeof metadata === 'object') {
-    return metadata as Record<string, any>;
+    return metadata as Record<string, unknown>;
   }
   return null;
 };
 
+const includesStakingKeyword = (value?: string | null) => {
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized.includes('staking') || normalized.includes('stake') || normalized.includes('stak');
+};
+
 export const resolveTransactionCategory = (
   context: string,
-  extras?: { counterparty?: string; metadata?: Record<string, any> | null }
+  extras?: { counterparty?: string; metadata?: Record<string, unknown> | null }
 ): TransactionCategory => {
+  if (includesStakingKeyword(context)) return 'staking';
   const normalized = (context || '').toLowerCase();
   if (normalized.includes('deposit')) return 'deposit';
-  if (normalized.includes('stake')) return 'staking';
   if (normalized.includes('merchant') || normalized.includes('payment')) return 'merchant';
   if (normalized.includes('wallet')) return 'wallet';
   if (normalized.includes('transfer') || normalized.includes('contact')) return 'transfer';
 
-  const counterparty = (extras?.counterparty || '').toLowerCase();
-  if (counterparty.includes('stake')) return 'staking';
+  if (includesStakingKeyword(extras?.counterparty)) return 'staking';
 
   if (extras?.metadata && typeof extras.metadata === 'object') {
     const metadataString = JSON.stringify(extras.metadata).toLowerCase();
-    if (metadataString.includes('stake')) {
+    if (includesStakingKeyword(metadataString)) {
       return 'staking';
     }
     if ('productCode' in extras.metadata) {
@@ -100,7 +105,7 @@ export const formatTransactionTitle = (context: string, counterparty: string, am
     case 'wallet':
       return `Wallet ${target}`;
     case 'staking':
-      return amount >= 0 ? `Récompense staking` : `Blocage staking`;
+      return amount >= 0 ? `Recompense ${target}` : `Blocage ${target}`;
     case 'transfer':
       return `Transfert ${target}`;
     default:
@@ -125,6 +130,113 @@ export const mapToTransactionDetail = (row: SupabaseTransactionRow): Transaction
     direction: amount > 0 ? 'in' : amount < 0 ? 'out' : 'neutral',
     title: formatTransactionTitle(row.context, row.counterparty, amount),
   };
+};
+
+type StakingRewardBucket = {
+  id: string;
+  productCode?: string | null;
+  counterparty: string;
+  payoutDate: string;
+  latestCreatedAt: string;
+  totalAmount: number;
+  transactionIds: string[];
+  payoutTimestamps: string[];
+  entries: Array<{
+    id: string;
+    amountFre: number;
+    createdAt: string;
+    payoutAt?: string | null;
+    positionId?: string | null;
+  }>;
+};
+
+const buildRewardBucketId = (productCode: string | null | undefined, dateKey: string) => {
+  const normalizedCode = productCode ? productCode.toLowerCase() : 'staking';
+  return `stakeagg_${normalizedCode}_${dateKey}`;
+};
+
+const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
+
+const getStringMetadataValue = (metadata: Record<string, unknown> | null, key: string) => {
+  const value = metadata?.[key];
+  return typeof value === 'string' ? value : undefined;
+};
+
+export const aggregateStakingRewardRows = (rows: SupabaseTransactionRow[]): SupabaseTransactionRow[] => {
+  const buckets = new Map<string, StakingRewardBucket>();
+  const passthrough: SupabaseTransactionRow[] = [];
+
+  rows.forEach((row) => {
+    const metadata = sanitizeMetadata(row.metadata);
+    const normalizedRow: SupabaseTransactionRow = { ...row, metadata };
+    const amount = Number(row.amountFre) || 0;
+    const category = resolveTransactionCategory(row.context, { counterparty: row.counterparty, metadata });
+    const isReward = category === 'staking' && amount > 0;
+    if (!isReward) {
+      passthrough.push(normalizedRow);
+      return;
+    }
+
+    const payoutValue = getStringMetadataValue(metadata, 'payoutAt');
+    const payoutTimestamp = payoutValue ? new Date(payoutValue) : new Date(row.createdAt);
+    const dateKey = toDateKey(payoutTimestamp);
+    const productCode = getStringMetadataValue(metadata, 'productCode') ?? (row.counterparty || '').toLowerCase();
+    const bucketKey = `${productCode || 'staking'}__${dateKey}`;
+    const counterparty = row.counterparty || 'Staking';
+
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, {
+        id: buildRewardBucketId(productCode, dateKey),
+        productCode,
+        counterparty,
+        payoutDate: dateKey,
+        latestCreatedAt: row.createdAt,
+        totalAmount: 0,
+        transactionIds: [],
+        payoutTimestamps: [],
+        entries: [],
+      });
+    }
+
+    const bucket = buckets.get(bucketKey)!;
+    bucket.totalAmount += amount;
+    bucket.transactionIds.push(row.id);
+    bucket.payoutTimestamps.push(payoutTimestamp.toISOString());
+    bucket.entries.push({
+      id: row.id,
+      amountFre: amount,
+      createdAt: row.createdAt,
+      payoutAt: payoutValue ?? null,
+      positionId: getStringMetadataValue(metadata, 'positionId') ?? null,
+    });
+
+    if (new Date(row.createdAt).getTime() > new Date(bucket.latestCreatedAt).getTime()) {
+      bucket.latestCreatedAt = row.createdAt;
+    }
+  });
+
+  const aggregatedRows: SupabaseTransactionRow[] = Array.from(buckets.values()).map((bucket) => ({
+    id: bucket.id,
+    context: 'staking_reward_aggregate',
+    counterparty: bucket.counterparty,
+    amountFre: Number(bucket.totalAmount.toFixed(2)),
+    feeFre: 0,
+    createdAt: bucket.latestCreatedAt,
+    metadata: {
+      aggregated: true,
+      aggregationType: 'staking_reward_daily',
+      productCode: bucket.productCode,
+      payoutDate: bucket.payoutDate,
+      payoutTimeline: bucket.payoutTimestamps,
+      transactionIds: bucket.transactionIds,
+      entryCount: bucket.transactionIds.length,
+      entries: bucket.entries,
+    },
+  }));
+
+  return [...aggregatedRows, ...passthrough].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 };
 
 const freFormatter = new Intl.NumberFormat('fr-FR', {

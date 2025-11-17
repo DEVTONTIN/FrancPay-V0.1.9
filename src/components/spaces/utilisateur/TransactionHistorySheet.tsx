@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/lib/supabaseClient';
 import {
+  aggregateStakingRewardRows,
   formatFreAmount,
   mapToTransactionDetail,
   TransactionCategory,
@@ -85,7 +86,8 @@ export const TransactionHistoryPage: React.FC<TransactionHistoryPageProps> = ({
         throw txError;
       }
 
-      setHistory((data ?? []).map(mapToTransactionDetail));
+      const aggregatedRows = aggregateStakingRewardRows(data ?? []);
+      setHistory(aggregatedRows.map(mapToTransactionDetail));
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Transaction history error', err);

@@ -1,14 +1,19 @@
 import React from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowRightLeft, Share2, Plus, Settings } from 'lucide-react';
 import { formatFreAmount } from '@/components/spaces/utilisateur/transaction-utils';
+import type { TransactionCategory } from '@/components/spaces/utilisateur/transaction-utils';
 
 export interface TransactionDisplay {
   id: string;
   title: string;
   amount: number;
   createdAt: string;
+  category?: TransactionCategory;
+  counterparty?: string;
+  metadata?: Record<string, unknown> | null;
+  isAggregate?: boolean;
+  sourceTransactionIds?: string[];
 }
 
 interface UtilisateurHomeSectionProps {
@@ -17,7 +22,7 @@ interface UtilisateurHomeSectionProps {
   onShare?: () => void;
   onDeposit?: () => void;
   onShowHistory?: () => void;
-  onSelectTransaction?: (transactionId: string) => void;
+  onSelectTransaction?: (transaction: TransactionDisplay) => void;
   onOpenSettings?: () => void;
   onOpenSendPage?: () => void;
   sendDisabled?: boolean;
@@ -123,7 +128,7 @@ export const UtilisateurHomeSection: React.FC<UtilisateurHomeSectionProps> = ({
                 <button
                   key={tx.id}
                   type="button"
-                  onClick={() => onSelectTransaction?.(tx.id)}
+                  onClick={() => onSelectTransaction?.(tx)}
                   className={`flex w-full justify-between items-center px-4 py-3 ${
                     index < transactions.length - 1 ? 'border-b border-slate-800/70' : ''
                   } ${onSelectTransaction ? 'hover:bg-slate-900/60 transition' : ''}`}

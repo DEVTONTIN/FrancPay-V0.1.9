@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import type { PostgrestError } from '@supabase/supabase-js';
-import { UtilisateurHeader } from '@/components/spaces/utilisateur/UtilisateurHeader';
+import { UtilisateurHeader, type BalanceDisplayCurrency } from '@/components/spaces/utilisateur/UtilisateurHeader';
 import { UtilisateurHomeSection, TransactionDisplay } from '@/components/spaces/utilisateur/UtilisateurHomeSection';
 import { UtilisateurPaySection } from '@/components/spaces/utilisateur/UtilisateurPaySection';
 import { UtilisateurSettingsSection, ProfileFormState } from '@/components/spaces/utilisateur/UtilisateurSettingsSection';
@@ -17,15 +17,26 @@ import { TransactionDetailDrawer } from '@/components/spaces/utilisateur/Transac
 import { SendFundsPage } from '@/components/spaces/utilisateur/SendFundsPage';
 import { UtilisateurProfilePage } from '@/components/spaces/utilisateur/UtilisateurProfilePage';
 import {
+  aggregateStakingRewardRows,
   formatFreAmount,
   formatTransactionTitle,
   mapToTransactionDetail,
+  resolveTransactionCategory,
   SupabaseTransactionRow,
   TransactionDetail,
 } from '@/components/spaces/utilisateur/transaction-utils';
 import { generateReferralCodeFromId } from '@/lib/referral';
+import { useFreExchangeRates } from '@/hooks/useFreExchangeRates';
 
 type UtilisateurSection = 'home' | 'invest' | 'settings' | 'pay';
+
+const RECENT_TRANSACTION_DISPLAY_LIMIT = 5;
+const RECENT_TRANSACTION_BUFFER_LIMIT = 40;
+const supportedCurrencies: BalanceDisplayCurrency[] = ['FRE', 'EUR', 'USDT', 'TON'];
+const twoDecimalFormatter = new Intl.NumberFormat('fr-FR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 const formatSupabaseError = (error: unknown) => {
   if (!error) return 'Une erreur inattendue est survenue.';
@@ -78,7 +89,10 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const [contactFeedback, setContactFeedback] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState({ handle: '', amount: '0', note: '' });
   const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
+  const [, setRawTransactions] = useState<SupabaseTransactionRow[]>([]);
+  const [aggregatedTransactionRows, setAggregatedTransactionRows] = useState<SupabaseTransactionRow[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [balanceCurrency, setBalanceCurrency] = useState<BalanceDisplayCurrency>('FRE');
   const transactionsLoadedRef = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
@@ -89,6 +103,7 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
   const [profilePageOpen, setProfilePageOpen] = useState(false);
+  const { rates, loading: ratesLoading, error: ratesError } = useFreExchangeRates();
   const defaultProfileDetails: ProfileFormState = useMemo(
     () => ({
       firstName: '',
@@ -110,16 +125,39 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
 
   const mapTransactionRow = useCallback((tx: SupabaseTransactionRow): TransactionDisplay => {
     const amountValue = Number(tx.amountFre) || 0;
+    const metadata =
+      tx.metadata && typeof tx.metadata === 'object' && !Array.isArray(tx.metadata)
+        ? (tx.metadata as Record<string, unknown>)
+        : null;
+    const category = resolveTransactionCategory(tx.context, { counterparty: tx.counterparty, metadata });
+    const transactionIdsValue = metadata?.transactionIds;
+    const sourceTransactionIds = Array.isArray(transactionIdsValue)
+      ? transactionIdsValue.filter((value): value is string => typeof value === 'string')
+      : undefined;
     return {
       id: tx.id,
       title: formatTransactionTitle(tx.context, tx.counterparty, amountValue),
       amount: amountValue,
       createdAt: tx.createdAt,
+      metadata,
+      counterparty: tx.counterparty,
+      category,
+      isAggregate: Boolean(metadata?.aggregated),
+      sourceTransactionIds,
     };
   }, []);
 
+  const updateRecentTransactions = useCallback(
+    (rows: SupabaseTransactionRow[]) => {
+      const aggregatedRows = aggregateStakingRewardRows(rows).slice(0, RECENT_TRANSACTION_DISPLAY_LIMIT);
+      setAggregatedTransactionRows(aggregatedRows);
+      setTransactions(aggregatedRows.map(mapTransactionRow));
+    },
+    [mapTransactionRow]
+  );
+
   const ensureProfileRecord = useCallback(
-    async (sessionUser: { id: string; email?: string | null; user_metadata?: Record<string, any> | undefined }) => {
+    async (sessionUser: { id: string; email?: string | null; user_metadata?: Record<string, unknown> | undefined }) => {
       if (!sessionUser?.id) return null;
       const usernameMeta =
         typeof sessionUser.user_metadata?.username === 'string' ? sessionUser.user_metadata.username : undefined;
@@ -189,6 +227,8 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       setUsername('');
       setProfileEmail('');
       setBalanceFre(0);
+      setRawTransactions([]);
+      setAggregatedTransactionRows([]);
       setTransactions([]);
       setTransactionsLoading(false);
       transactionsLoadedRef.current = false;
@@ -224,10 +264,10 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       supabase.from('UserWalletBalance').select('balanceFre').eq('authUserId', session.user.id).maybeSingle(),
       supabase
         .from('UserPaymentTransaction')
-        .select('id,counterparty,amountFre,createdAt,context')
+        .select('id,counterparty,amountFre,createdAt,context,metadata')
         .eq('authUserId', session.user.id)
         .order('createdAt', { ascending: false })
-        .limit(5),
+        .limit(RECENT_TRANSACTION_BUFFER_LIMIT),
     ]);
 
     let resolvedProfile = profileData;
@@ -283,9 +323,16 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
 
     if (txError) {
       console.error('Erreur transactions', txError);
+      setRawTransactions([]);
+      setAggregatedTransactionRows([]);
       setTransactions([]);
     } else if (txData) {
-      setTransactions(txData.map(mapTransactionRow));
+      setRawTransactions(txData);
+      updateRecentTransactions(txData);
+    } else {
+      setRawTransactions([]);
+      setAggregatedTransactionRows([]);
+      setTransactions([]);
     }
 
     if (!transactionsLoadedRef.current) {
@@ -293,7 +340,7 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       transactionsLoadedRef.current = true;
     }
     setIsProfileLoading(false);
-  }, [mapTransactionRow, ensureProfileRecord]);
+  }, [defaultProfileDetails, ensureProfileRecord, updateRecentTransactions]);
 
   useEffect(() => {
     refreshProfile();
@@ -423,11 +470,78 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     []
   );
 
+  const convertedBalanceValue = useMemo(() => {
+    if (balanceCurrency === 'FRE') {
+      return balanceFre;
+    }
+    if (!rates) {
+      return null;
+    }
+    switch (balanceCurrency) {
+      case 'EUR':
+        return balanceFre * rates.priceUsd * rates.usdToEur;
+      case 'USDT':
+        return balanceFre * rates.priceUsd;
+      case 'TON':
+        return balanceFre * rates.priceTon;
+      default:
+        return balanceFre;
+    }
+  }, [balanceCurrency, balanceFre, rates]);
+
   const [balanceWhole, balanceCents] = useMemo(() => {
-    const formatted = formatFreAmount(balanceFre);
+    if (balanceCurrency !== 'FRE' && convertedBalanceValue === null) {
+      return ['--', '--'];
+    }
+    if (balanceCurrency === 'FRE') {
+      const formatted = formatFreAmount(balanceFre);
+      const parts = formatted.split(',');
+      return [parts[0], parts[1] ?? '00'];
+    }
+    const formatted = twoDecimalFormatter.format(convertedBalanceValue ?? 0);
     const parts = formatted.split(',');
     return [parts[0], parts[1] ?? '00'];
-  }, [balanceFre]);
+  }, [balanceCurrency, balanceFre, convertedBalanceValue]);
+
+  const currencyMenuOptions = useMemo(
+    () =>
+      supportedCurrencies.map((currency) => ({
+        id: currency,
+        label:
+          currency === 'FRE'
+            ? 'Franc numerique (FRE)'
+            : currency === 'EUR'
+              ? 'Euro (EUR)'
+              : currency === 'USDT'
+                ? 'Tether (USDT)'
+                : 'Toncoin (TON)',
+        description:
+          currency === 'FRE'
+            ? 'Solde natif'
+            : currency === 'EUR'
+              ? 'Conversion USD->EUR'
+              : currency === 'USDT'
+                ? 'Base sur le prix GeckoTerminal'
+                : 'Base sur la paire TON GeckoTerminal',
+        disabled: currency !== 'FRE' && !rates,
+      })),
+    [rates]
+  );
+
+  const currencyHint = useMemo(() => {
+    if (rates) {
+      const usd = rates.priceUsd >= 0.01 ? rates.priceUsd.toFixed(4) : rates.priceUsd.toFixed(6);
+      const ton = rates.priceTon >= 0.01 ? rates.priceTon.toFixed(6) : rates.priceTon.toFixed(8);
+      return `1 FRE ~ ${usd} $ / ${ton} TON`;
+    }
+    if (ratesError) {
+      return ratesError;
+    }
+    if (ratesLoading) {
+      return 'Chargement du cours du FRE...';
+    }
+    return null;
+  }, [rates, ratesError, ratesLoading]);
 
   const depositTag = useMemo(() => {
     if (referralCode) return referralCode;
@@ -435,10 +549,26 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     return undefined;
   }, [referralCode, authUserId]);
 
+  useEffect(() => {
+    if (!rates && balanceCurrency !== 'FRE') {
+      setBalanceCurrency('FRE');
+    }
+  }, [rates, balanceCurrency]);
+
   useOnchainDepositSync({
     enabled: Boolean(authUserId),
     onDeposit: refreshProfile,
   });
+
+  const handleCurrencyChange = useCallback(
+    (nextCurrency: BalanceDisplayCurrency) => {
+      if (nextCurrency !== 'FRE' && !rates) {
+        return;
+      }
+      setBalanceCurrency(nextCurrency);
+    },
+    [rates]
+  );
 
   useEffect(() => {
     if (!authUserId) return;
@@ -473,20 +603,21 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
           const updatedRow = (payload.new || payload.old) as SupabaseTransactionRow | null;
           if (!updatedRow) return;
 
-          setTransactions((prev) => {
+          setRawTransactions((prev) => {
+            let nextRows: SupabaseTransactionRow[];
             if (payload.eventType === 'DELETE') {
-              return prev.filter((tx) => tx.id !== updatedRow.id);
+              nextRows = prev.filter((row) => row.id !== updatedRow.id);
+            } else if (payload.eventType === 'UPDATE') {
+              nextRows = prev.map((row) => (row.id === updatedRow.id ? updatedRow : row));
+            } else {
+              nextRows = [updatedRow, ...prev];
             }
-
-            const nextTx = mapTransactionRow(updatedRow);
-            const withoutCurrent = prev.filter((tx) => tx.id !== nextTx.id);
-            const merged =
-              payload.eventType === 'UPDATE'
-                ? [nextTx, ...withoutCurrent]
-                : [nextTx, ...prev];
-            return merged
+            const ordered = nextRows
+              .slice()
               .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-              .slice(0, 5);
+              .slice(0, RECENT_TRANSACTION_BUFFER_LIMIT);
+            updateRecentTransactions(ordered);
+            return ordered;
           });
           setTransactionsLoading(false);
         }
@@ -496,7 +627,7 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [authUserId, mapTransactionRow]);
+  }, [authUserId, updateRecentTransactions]);
 
   const handleLogoutConfirm = useCallback(async () => {
     setLogoutPending(true);
@@ -506,11 +637,13 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     setUsername('');
     setProfileEmail('');
     setBalanceFre(0);
+    setRawTransactions([]);
+    setAggregatedTransactionRows([]);
     setTransactions([]);
     setTransactionsLoading(false);
     transactionsLoadedRef.current = false;
     setProfileDetails(defaultProfileDetails);
-  }, []);
+  }, [defaultProfileDetails]);
 
   useEffect(() => {
     if (!depositDrawerOpen) return;
@@ -577,6 +710,34 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       }
     },
     []
+  );
+
+  const handleRecentTransactionSelect = useCallback(
+    (tx: TransactionDisplay) => {
+      if (tx.isAggregate) {
+        const sourceRow = aggregatedTransactionRows.find((row) => row.id === tx.id);
+        if (sourceRow) {
+          openTransactionDetail(sourceRow.id, mapToTransactionDetail(sourceRow));
+          return;
+        }
+        const fallbackDetail: TransactionDetail = {
+          id: tx.id,
+          context: 'staking_reward_aggregate',
+          counterparty: tx.counterparty || 'Staking',
+          amount: tx.amount,
+          fee: 0,
+          createdAt: tx.createdAt,
+          metadata: tx.metadata ?? null,
+          category: tx.category ?? 'staking',
+          direction: tx.amount > 0 ? 'in' : tx.amount < 0 ? 'out' : 'neutral',
+          title: tx.title,
+        };
+        openTransactionDetail(tx.id, fallbackDetail);
+        return;
+      }
+      openTransactionDetail(tx.id);
+    },
+    [aggregatedTransactionRows, openTransactionDetail]
   );
 
 const closeTransactionDetail = useCallback(() => {
@@ -651,6 +812,10 @@ const closeTransactionDetail = useCallback(() => {
             showBalance={activeSection === 'home'}
             balanceWhole={balanceWhole}
             balanceCents={balanceCents}
+            balanceCurrency={balanceCurrency}
+            onChangeCurrency={handleCurrencyChange}
+            currencyOptions={currencyMenuOptions}
+            conversionHint={currencyHint}
           />
 
           {activeSection === 'home' && (
@@ -660,7 +825,7 @@ const closeTransactionDetail = useCallback(() => {
               onShare={() => setShareDrawerOpen(true)}
               onDeposit={() => setDepositDrawerOpen(true)}
               onShowHistory={onHistoryOpen}
-              onSelectTransaction={(id) => openTransactionDetail(id)}
+              onSelectTransaction={handleRecentTransactionSelect}
               onOpenSettings={() => onChangeSection?.('settings')}
               onOpenSendPage={handleOpenSendPage}
               sendDisabled={transfersLocked}
