@@ -40,6 +40,24 @@ const includesStakingKeyword = (value?: string | null) => {
   return normalized.includes('staking') || normalized.includes('stake') || normalized.includes('stak');
 };
 
+const isStakingWithdrawContext = (context?: string | null) => {
+  if (!context) return false;
+  const normalized = context.toLowerCase();
+  return normalized.includes('withdraw') || normalized.includes('unlock');
+};
+
+const resolveMetadataTransactionType = (metadata?: Record<string, unknown> | null) => {
+  if (!metadata) return undefined;
+  const raw = (metadata as Record<string, unknown>).transactionType;
+  return typeof raw === 'string' ? raw.toLowerCase() : undefined;
+};
+
+const isStakingWithdraw = (context: string, metadata?: Record<string, unknown> | null) => {
+  if (isStakingWithdrawContext(context)) return true;
+  const metaType = resolveMetadataTransactionType(metadata);
+  return metaType === 'staking_withdraw' || metaType === 'staking_unlock';
+};
+
 export const resolveTransactionCategory = (
   context: string,
   extras?: { counterparty?: string; metadata?: Record<string, unknown> | null }
@@ -94,22 +112,25 @@ export const transactionCategoryBadge = (category: TransactionCategory) => {
 
 const formatCounterparty = (value?: string | null) => value?.trim() || 'FrancPay';
 
-export const formatTransactionTitle = (context: string, counterparty: string, amount: number) => {
-  const category = resolveTransactionCategory(context, { counterparty });
+export const formatTransactionTitle = (context: string, counterparty: string, amount: number, metadata?: Record<string, unknown> | null) => {
+  const category = resolveTransactionCategory(context, { counterparty, metadata });
   const target = formatCounterparty(counterparty);
   switch (category) {
     case 'deposit':
-      return 'Dépôt on-chain';
+      return 'Depot on-chain';
     case 'merchant':
-      return `Paiement ${target}`;
+      return 'Paiement ' + target;
     case 'wallet':
-      return `Wallet ${target}`;
+      return 'Wallet ' + target;
     case 'staking':
-      return amount >= 0 ? `Recompense ${target}` : `Blocage ${target}`;
+      if (isStakingWithdraw(context, metadata)) {
+        return 'Retrait staking ' + target;
+      }
+      return amount >= 0 ? 'Recompense ' + target : 'Blocage ' + target;
     case 'transfer':
-      return `Transfert ${target}`;
+      return 'Transfert ' + target;
     default:
-      return `Opération ${target}`;
+      return 'Operation ' + target;
   }
 };
 
@@ -128,7 +149,7 @@ export const mapToTransactionDetail = (row: SupabaseTransactionRow): Transaction
     metadata,
     category,
     direction: amount > 0 ? 'in' : amount < 0 ? 'out' : 'neutral',
-    title: formatTransactionTitle(row.context, row.counterparty, amount),
+    title: formatTransactionTitle(row.context, row.counterparty, amount, metadata),
   };
 };
 
@@ -171,7 +192,8 @@ export const aggregateStakingRewardRows = (rows: SupabaseTransactionRow[]): Supa
     const normalizedRow: SupabaseTransactionRow = { ...row, metadata };
     const amount = Number(row.amountFre) || 0;
     const category = resolveTransactionCategory(row.context, { counterparty: row.counterparty, metadata });
-    const isReward = category === 'staking' && amount > 0;
+    const isWithdraw = isStakingWithdraw(row.context, metadata);
+    const isReward = category === 'staking' && amount > 0 && !isWithdraw;
     if (!isReward) {
       passthrough.push(normalizedRow);
       return;

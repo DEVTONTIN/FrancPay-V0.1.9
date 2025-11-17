@@ -43,6 +43,20 @@ type StakePositionRecord = {
   product?: StakeProductRecord | null;
 };
 
+type PositionGroup = {
+  key: string;
+  label: string;
+  positions: StakePositionRecord[];
+  stats: {
+    totalPrincipal: number;
+    totalRewards: number;
+    totalDailyReward: number;
+    nextRewardAt?: string;
+    lockedUntil?: string | null;
+    isLocked: boolean;
+  };
+};
+
 interface UtilisateurInvestSectionProps {
   authUserId: string | null;
   balanceFre: number;
@@ -74,6 +88,20 @@ const computeDailyReward = (principal: number, apyPercent: number) => {
   if (!principal || !apyPercent) return 0;
   return Number(((principal * apyPercent) / 100 / 365).toFixed(2));
 };
+
+const resolvePositionTitle = (position: StakePositionRecord) => {
+  const snapshotTitle =
+    typeof position.productSnapshot?.title === 'string' ? position.productSnapshot?.title : undefined;
+  return position.product?.title ?? snapshotTitle ?? 'Staking';
+};
+
+const resolvePositionCode = (position: StakePositionRecord) => {
+  const snapshotCode =
+    typeof position.productSnapshot?.code === 'string' ? position.productSnapshot?.code : undefined;
+  return position.product?.code ?? snapshotCode ?? position.productId ?? position.id;
+};
+
+const classicGroupKey = 'stacking_classic';
 
 const normalizeStakeProductRecord = (input: Record<string, any>, fallbackId?: string): StakeProductRecord => {
   const resolveString = (value: any, fallback: string) =>
@@ -117,6 +145,16 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
   const [resultModal, setResultModal] = useState<{ status: 'success' | 'error'; title: string; message: string } | null>(
     null
   );
+  const [withdrawSelection, setWithdrawSelection] = useState<{ position: StakePositionRecord; amountInput: string } | null>(
+    null
+  );
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawConfirm, setWithdrawConfirm] = useState<{
+    position: StakePositionRecord;
+    amount: number;
+    inputValue: string;
+  } | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const loadInvestData = useCallback(async () => {
     setFetching(true);
@@ -256,26 +294,84 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
     }
   };
 
-  const handleRedeem = async (position: StakePositionRecord) => {
+  const openWithdrawPrompt = (position: StakePositionRecord) => {
+    if (!authUserId) {
+      setFeedback({ type: 'error', message: 'Connectez-vous pour retirer.' });
+      return;
+    }
+    setWithdrawSelection({ position, amountInput: position.principalFre.toString() });
+    setWithdrawError(null);
+  };
+
+  const closeWithdrawPrompt = () => {
+    setWithdrawSelection(null);
+    setWithdrawError(null);
+  };
+
+  const handleWithdrawAmountChange = (value: string) => {
+    setWithdrawSelection((prev) => (prev ? { ...prev, amountInput: value } : prev));
+    setWithdrawError(null);
+  };
+
+  const proceedWithdrawConfirmation = () => {
+    if (!withdrawSelection) return;
+    const numericValue = Number(withdrawSelection.amountInput.replace(',', '.'));
+    if (!numericValue || Number.isNaN(numericValue)) {
+      setWithdrawError('Saisissez un montant valide.');
+      return;
+    }
+    if (numericValue <= 0) {
+      setWithdrawError('Le montant doit etre superieur a 0.');
+      return;
+    }
+    if (numericValue > withdrawSelection.position.principalFre) {
+      setWithdrawError('Montant superieur au capital disponible sur cette position.');
+      return;
+    }
+    setWithdrawConfirm({
+      position: withdrawSelection.position,
+      amount: numericValue,
+      inputValue: withdrawSelection.amountInput,
+    });
+    setWithdrawSelection(null);
+  };
+
+  const handleWithdrawConfirmCancel = () => {
+    if (!withdrawConfirm) return;
+    setWithdrawSelection({
+      position: withdrawConfirm.position,
+      amountInput: withdrawConfirm.inputValue,
+    });
+    setWithdrawConfirm(null);
+  };
+
+  const executeRedeem = async (position: StakePositionRecord, amountFre: number) => {
     if (!authUserId) return;
     setRedeeming(position.id);
     setFeedback(null);
     try {
-      const { error } = await supabase.rpc('rpc_user_stake_redeem', {
+      const { error } = await supabase.rpc('rpc_user_stake_withdraw', {
         p_position_id: position.id,
+        p_amount_fre: amountFre,
       });
       if (error) throw error;
-      setFeedback({ type: 'success', message: 'Position clôturée, FRE restitués.' });
+      setResultModal({
+        status: 'success',
+        title: 'Retrait en cours',
+        message: `Votre demande de retrait de ${formatNumber(amountFre)} FRE sur ${resolvePositionTitle(position)} est en cours de traitement.`,
+      });
       await loadInvestData();
       await onRefreshWallet?.();
     } catch (error) {
       console.error('Stake redeem error', error);
-      setFeedback({
-        type: 'error',
+      setResultModal({
+        status: 'error',
+        title: 'Retrait impossible',
         message: error instanceof Error ? error.message : 'Retrait impossible pour cette position.',
       });
     } finally {
       setRedeeming(null);
+      setWithdrawConfirm(null);
     }
   };
 
@@ -304,6 +400,75 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
       .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
     return nextDates[0];
   }, [activePositions]);
+
+  const groupedActivePositions = useMemo(() => {
+    const groups = new Map<string, PositionGroup>();
+    activePositions.forEach((position) => {
+      const code = resolvePositionCode(position);
+      const title = resolvePositionTitle(position);
+      const descriptor = `${code} ${title}`.toLowerCase();
+      const isClassic = descriptor.includes('classic');
+      const key = isClassic ? classicGroupKey : code;
+      const label = isClassic ? 'Staking classic' : title;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label,
+          positions: [],
+          stats: {
+            totalPrincipal: 0,
+            totalRewards: 0,
+            totalDailyReward: 0,
+            nextRewardAt: undefined,
+            lockedUntil: null,
+            isLocked: Boolean(position.product?.isLocked ?? position.productSnapshot?.isLocked ?? false),
+          },
+        });
+      }
+      const group = groups.get(key)!;
+      group.positions.push(position);
+      group.stats.totalPrincipal += position.principalFre;
+      group.stats.totalRewards += position.rewardAccruedFre;
+      const apy = position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0);
+      group.stats.totalDailyReward += computeDailyReward(position.principalFre, apy);
+      if (position.nextRewardAt) {
+        if (!group.stats.nextRewardAt || new Date(position.nextRewardAt) < new Date(group.stats.nextRewardAt)) {
+          group.stats.nextRewardAt = position.nextRewardAt;
+        }
+      }
+      const lockActive =
+        Boolean(position.product?.isLocked ?? position.productSnapshot?.isLocked ?? false) &&
+        position.lockedUntil &&
+        new Date(position.lockedUntil) > new Date();
+      if (lockActive) {
+        group.stats.isLocked = true;
+        if (!group.stats.lockedUntil || new Date(position.lockedUntil) > new Date(group.stats.lockedUntil)) {
+          group.stats.lockedUntil = position.lockedUntil;
+        }
+      }
+    });
+    const arr = Array.from(groups.values());
+    arr.sort((a, b) => {
+      if (a.key === classicGroupKey && b.key !== classicGroupKey) return -1;
+      if (b.key === classicGroupKey && a.key !== classicGroupKey) return 1;
+      return a.label.localeCompare(b.label);
+    });
+    return arr;
+  }, [activePositions]);
+
+  const getGroupDefaultExpanded = (group: PositionGroup) =>
+    group.positions.length <= 1 || group.key === classicGroupKey;
+
+  const isGroupExpanded = (group: PositionGroup) =>
+    expandedGroups[group.key] ?? getGroupDefaultExpanded(group);
+
+  const toggleGroupExpanded = (group: PositionGroup) => {
+    const defaultValue = getGroupDefaultExpanded(group);
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [group.key]: !(prev[group.key] ?? defaultValue),
+    }));
+  };
 
   return (
     <section className="space-y-4">
@@ -427,80 +592,221 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
             <ShieldCheck className="h-4 w-4 text-emerald-400" />
             Positions actives
           </div>
+
           {fetching ? (
             <p className="text-xs text-slate-400">Chargement des positions...</p>
-          ) : activePositions.length === 0 ? (
-            <p className="text-xs text-slate-500">Aucun staking en cours. Sélectionnez une offre ci-dessus.</p>
+          ) : groupedActivePositions.length === 0 ? (
+            <p className="text-xs text-slate-500">Aucun staking en cours. Selectionnez une offre ci-dessus.</p>
           ) : (
             <div className="space-y-3">
-              {activePositions.map((position) => {
-                const isLockedFuture =
-                  Boolean(position.product?.isLocked) &&
-                  !!position.lockedUntil &&
-                  new Date(position.lockedUntil) > new Date();
+              {groupedActivePositions.map((group) => {
+                if (group.positions.length === 1) {
+                  const position = group.positions[0];
+                  const isLockedFuture =
+                    Boolean(position.product?.isLocked) &&
+                    !!position.lockedUntil &&
+                    new Date(position.lockedUntil) > new Date();
+                  return (
+                    <div
+                      key={position.id}
+                      className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 flex flex-col gap-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">{resolvePositionTitle(position)}</p>
+                          <p className="text-[11px] text-slate-500">Cree le {formatDateTime(position.createdAt)}</p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={
+                            position.product?.isLocked
+                              ? 'border-amber-400/50 text-amber-300'
+                              : 'border-emerald-400/50 text-emerald-200'
+                          }
+                        >
+                          {position.product?.isLocked ? 'Bloque' : 'Flexible'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-[11px] text-slate-400">Capital</p>
+                          <p className="font-semibold">{formatNumber(position.principalFre)} FRE</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Rewards cumules</p>
+                          <p className="font-semibold text-emerald-300">{formatNumber(position.rewardAccruedFre)} FRE</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Prochaine reward</p>
+                          <p className="font-semibold">{formatDateTime(position.nextRewardAt)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Deblocage</p>
+                          <p className="font-semibold">
+                            {position.product?.isLocked ? formatDateTime(position.lockedUntil) : 'Disponible immediat'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">Reward quotidien</p>
+                          <p className="font-semibold text-emerald-200">
+                            {formatNumber(
+                              computeDailyReward(
+                                position.principalFre,
+                                position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0)
+                              )
+                            )}{' '}
+                            FRE
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="mt-2 h-11 w-full rounded-xl border-slate-700 text-white hover:bg-slate-800/60 disabled:opacity-40"
+                        onClick={() => openWithdrawPrompt(position)}
+                        disabled={redeeming === position.id || isLockedFuture}
+                      >
+                        {redeeming === position.id ? 'Traitement...' : 'Retirer'}
+                      </Button>
+                    </div>
+                  );
+                }
+                const aggregatedUnlockLabel = group.stats.isLocked
+                  ? group.stats.lockedUntil
+                    ? `Bloque jusqu'au ${formatDateTime(group.stats.lockedUntil)}`
+                    : 'Bloque'
+                  : 'Disponible immediat';
+                const expanded = isGroupExpanded(group);
                 return (
-                  <div
-                    key={position.id}
-                    className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 flex flex-col gap-2"
-                  >
+                  <div key={group.key} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-semibold">{position.product?.title ?? 'Staking'}</p>
-                        <p className="text-[11px] text-slate-500">Créé le {formatDateTime(position.createdAt)}</p>
+                        <p className="text-sm font-semibold">{group.label}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {group.positions.length} positions actives regroupees
+                        </p>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          position.product?.isLocked
-                            ? 'border-amber-400/50 text-amber-300'
-                            : 'border-emerald-400/50 text-emerald-200'
-                        }
-                      >
-                        {position.product?.isLocked ? 'Bloqué' : 'Flexible'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={
+                            group.stats.isLocked
+                              ? 'border-amber-400/50 text-amber-300'
+                              : 'border-emerald-400/50 text-emerald-200'
+                          }
+                        >
+                          {group.stats.isLocked ? 'Bloque' : 'Flexible'}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-[11px] text-slate-300 hover:bg-slate-900/60"
+                          onClick={() => toggleGroupExpanded(group)}
+                        >
+                          {expanded ? 'Masquer' : 'Details'}
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <p className="text-[11px] text-slate-400">Capital</p>
-                        <p className="font-semibold">{formatNumber(position.principalFre)} FRE</p>
+                        <p className="text-[11px] text-slate-400">Capital total</p>
+                        <p className="font-semibold">{formatNumber(group.stats.totalPrincipal)} FRE</p>
                       </div>
                       <div>
-                        <p className="text-[11px] text-slate-400">Rewards cumulés</p>
-                        <p className="font-semibold text-emerald-300">{formatNumber(position.rewardAccruedFre)} FRE</p>
+                        <p className="text-[11px] text-slate-400">Rewards cumules</p>
+                        <p className="font-semibold text-emerald-300">{formatNumber(group.stats.totalRewards)} FRE</p>
                       </div>
                       <div>
                         <p className="text-[11px] text-slate-400">Prochaine reward</p>
-                        <p className="font-semibold">{formatDateTime(position.nextRewardAt)}</p>
+                        <p className="font-semibold">{formatDateTime(group.stats.nextRewardAt)}</p>
                       </div>
                       <div>
-                        <p className="text-[11px] text-slate-400">Déblocage</p>
-                        <p className="font-semibold">
-                          {position.product?.isLocked
-                            ? formatDateTime(position.lockedUntil)
-                            : 'Disponible immédiat'}
-                        </p>
+                        <p className="text-[11px] text-slate-400">Disponibilite</p>
+                        <p className="font-semibold">{aggregatedUnlockLabel}</p>
                       </div>
                       <div>
-                        <p className="text-[11px] text-slate-400">Reward quotidien</p>
+                        <p className="text-[11px] text-slate-400">Rewards quotidiens</p>
                         <p className="font-semibold text-emerald-200">
-                          {formatNumber(
-                            computeDailyReward(
-                              position.principalFre,
-                              position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0)
-                            )
-                          )}{' '}
-                          FRE
+                          {formatNumber(group.stats.totalDailyReward)} FRE
                         </p>
                       </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      className="mt-2 rounded-xl border-slate-700 text-white hover:bg-slate-800/60 disabled:opacity-40"
-                      onClick={() => handleRedeem(position)}
-                      disabled={redeeming === position.id || isLockedFuture}
-                    >
-                      {redeeming === position.id ? 'Traitement...' : 'Retirer'}
-                    </Button>
+                    {expanded && (
+                      <div className="space-y-3 border-t border-slate-800/60 pt-3">
+                        {group.positions.map((position) => {
+                          const isLockedFuture =
+                            Boolean(position.product?.isLocked) &&
+                            !!position.lockedUntil &&
+                            new Date(position.lockedUntil) > new Date();
+                          return (
+                            <div
+                              key={position.id}
+                              className="rounded-xl border border-slate-800/80 bg-slate-900/40 p-3 space-y-2"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold">{resolvePositionTitle(position)}</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    Cree le {formatDateTime(position.createdAt)}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    position.product?.isLocked
+                                      ? 'border-amber-400/50 text-amber-300'
+                                      : 'border-emerald-400/50 text-emerald-200'
+                                  }
+                                >
+                                  {position.product?.isLocked ? 'Bloque' : 'Flexible'}
+                                </Badge>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                  <p className="text-[11px] text-slate-400">Capital</p>
+                                  <p className="font-semibold">{formatNumber(position.principalFre)} FRE</p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] text-slate-400">Rewards cumules</p>
+                                  <p className="font-semibold text-emerald-300">
+                                    {formatNumber(position.rewardAccruedFre)} FRE
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] text-slate-400">Prochaine reward</p>
+                                  <p className="font-semibold">{formatDateTime(position.nextRewardAt)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] text-slate-400">Deblocage</p>
+                                  <p className="font-semibold">
+                                    {position.product?.isLocked ? formatDateTime(position.lockedUntil) : 'Disponible immediat'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] text-slate-400">Reward quotidien</p>
+                                  <p className="font-semibold text-emerald-200">
+                                    {formatNumber(
+                                      computeDailyReward(
+                                        position.principalFre,
+                                        position.product?.apyPercent ?? Number(position.productSnapshot?.apyPercent ?? 0)
+                                      )
+                                    )}{' '}
+                                    FRE
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                className="mt-1 h-11 w-full rounded-xl border-slate-700 text-white hover:bg-slate-800/60 disabled:opacity-40"
+                                disabled={redeeming === position.id || isLockedFuture}
+                                onClick={() => openWithdrawPrompt(position)}
+                              >
+                                {redeeming === position.id ? 'Traitement...' : 'Retirer'}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -534,6 +840,93 @@ export const UtilisateurInvestSection: React.FC<UtilisateurInvestSectionProps> =
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={Boolean(withdrawSelection)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeWithdrawPrompt();
+          }
+        }}
+      >
+        <DialogContent className="bg-slate-950 border-slate-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Montant a retirer</DialogTitle>
+          </DialogHeader>
+          {withdrawSelection && (
+            <div className="space-y-3 text-sm text-slate-300">
+              <p>
+                Indiquez le montant a retirer de votre position&nbsp;
+                <span className="font-semibold text-white">{resolvePositionTitle(withdrawSelection.position)}</span>.
+              </p>
+              <Input
+                type="number"
+                className="bg-slate-900 border-slate-800 text-white"
+                value={withdrawSelection.amountInput}
+                onChange={(event) => handleWithdrawAmountChange(event.target.value)}
+                min={0}
+                step="0.01"
+              />
+              <p className="text-[11px] text-slate-500">
+                Capital disponible: {formatNumber(withdrawSelection.position.principalFre)} FRE.
+              </p>
+              {withdrawError && <p className="text-xs text-rose-400">{withdrawError}</p>}
+            </div>
+          )}
+          <div className="mt-4 flex gap-2">
+            <Button className="flex-1 rounded-xl bg-slate-800 text-white" variant="ghost" onClick={closeWithdrawPrompt}>
+              Annuler
+            </Button>
+            <Button className="flex-1 rounded-xl bg-emerald-500 text-slate-950" onClick={proceedWithdrawConfirmation}>
+              Continuer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(withdrawConfirm)}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleWithdrawConfirmCancel();
+          }
+        }}
+      >
+        <AlertDialogContent className="bg-slate-950 border-slate-800 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-lg">Confirmer le retrait</AlertDialogTitle>
+          </AlertDialogHeader>
+          {withdrawConfirm && (
+            <div className="space-y-2 text-sm text-slate-300">
+              <p>
+                Vous confirmez retirer{' '}
+                <span className="text-emerald-400 font-semibold">
+                  {formatNumber(withdrawConfirm.amount)} FRE
+                </span>{' '}
+                de la position <span className="font-semibold">{resolvePositionTitle(withdrawConfirm.position)}</span> ?
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Le capital sera libere sur votre portefeuille si la position est eligible.
+              </p>
+            </div>
+          )}
+          <AlertDialogFooter className="mt-4 flex gap-2">
+            <AlertDialogCancel
+              className="flex-1 rounded-xl bg-slate-800 text-white hover:bg-slate-700"
+              onClick={handleWithdrawConfirmCancel}
+            >
+              Retour
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-semibold disabled:opacity-40"
+              onClick={() => withdrawConfirm && executeRedeem(withdrawConfirm.position, withdrawConfirm.amount)}
+              disabled={redeeming === withdrawConfirm?.position.id}
+            >
+              {redeeming === withdrawConfirm?.position.id ? 'Traitement...' : 'Confirmer'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={Boolean(stakePreview)}

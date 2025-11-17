@@ -140,9 +140,14 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
     const sourceTransactionIds = Array.isArray(transactionIdsValue)
       ? transactionIdsValue.filter((value): value is string => typeof value === 'string')
       : undefined;
-    return {
-      id: tx.id,
-      title: formatTransactionTitle(tx.context, tx.counterparty, amountValue),
+      return {
+        id: tx.id,
+        title: formatTransactionTitle(
+          tx.context,
+          tx.counterparty,
+          amountValue,
+          (tx.metadata as Record<string, unknown> | null) ?? null
+        ),
       amount: amountValue,
       createdAt: tx.createdAt,
       metadata,
