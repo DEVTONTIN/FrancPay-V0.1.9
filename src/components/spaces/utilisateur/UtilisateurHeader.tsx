@@ -3,6 +3,7 @@ import { ChevronsUpDown, Menu } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -26,6 +27,10 @@ interface UtilisateurHeaderProps {
   onChangeCurrency?: (currency: BalanceDisplayCurrency) => void;
   currencyOptions?: CurrencyOption[];
   conversionHint?: string | null;
+  onOpenProApplication?: () => void;
+  onOpenProPortal?: () => void;
+  proApplicationStatus?: 'idle' | 'pending' | 'approved';
+  proAccessGranted?: boolean;
 }
 
 export const UtilisateurHeader: React.FC<UtilisateurHeaderProps> = ({
@@ -37,7 +42,28 @@ export const UtilisateurHeader: React.FC<UtilisateurHeaderProps> = ({
   onChangeCurrency,
   currencyOptions = [],
   conversionHint,
+  onOpenProApplication,
+  onOpenProPortal,
+  proApplicationStatus = 'idle',
+  proAccessGranted = false,
 }) => {
+  const proMenuLabel = proAccessGranted
+    ? 'Mon espace pro'
+    : proApplicationStatus === 'pending'
+    ? 'Demande en cours'
+    : 'Devenir professionnel';
+
+  const handleProMenuAction = () => {
+    if (proAccessGranted) {
+      onOpenProPortal?.();
+      return;
+    }
+    if (proApplicationStatus === 'pending') {
+      return;
+    }
+    onOpenProApplication?.();
+  };
+
   const renderCurrencyTrigger = () => {
     const triggerButton = (
       <button
@@ -86,13 +112,47 @@ export const UtilisateurHeader: React.FC<UtilisateurHeaderProps> = ({
   return (
     <header className="space-y-4">
       <div className="flex items-center gap-3 text-sm text-slate-200">
-        <button
-          type="button"
-          className="p-2 rounded-full bg-slate-900/80 border border-slate-800 hover:bg-slate-900 transition-colors"
-          aria-label="Menu"
-        >
-          <Menu className="h-4 w-4" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="p-2 rounded-full bg-slate-900/80 border border-slate-800 hover:bg-slate-900 transition-colors"
+              aria-label="Menu"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            sideOffset={8}
+            className="bg-slate-950 text-white border-slate-800 min-w-[200px]"
+          >
+            <DropdownMenuItem
+              className="focus:bg-slate-900 cursor-pointer data-[disabled]:opacity-60"
+              disabled={proApplicationStatus === 'pending' && !proAccessGranted}
+              onSelect={(event) => {
+                event.preventDefault();
+                handleProMenuAction();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                handleProMenuAction();
+              }}
+            >
+              {proMenuLabel}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="focus:bg-slate-900 cursor-pointer"
+              onSelect={(event) => {
+                event.preventDefault();
+                const target = `${window.location.origin}/#faq`;
+                window.open(target, '_blank', 'noopener,noreferrer');
+              }}
+            >
+              FAQ
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-baseline gap-2 text-white">
           <span className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Compte</span>
           <span className="text-sm font-semibold">{username}</span>

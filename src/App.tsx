@@ -53,7 +53,16 @@ const AppContent: React.FC = () => {
     }
     const params = new URLSearchParams(window.location.search);
     const requestedSpace = params.get('space');
+    const requestedSection = params.get('section');
     if (requestedSpace === 'professional') {
+      if (
+        requestedSection === 'clients' ||
+        requestedSection === 'dashboard' ||
+        requestedSection === 'encaissement' ||
+        requestedSection === 'settings'
+      ) {
+        setProSection(requestedSection);
+      }
       setCurrentView('professional');
       return;
     }
@@ -65,6 +74,15 @@ const AppContent: React.FC = () => {
     const stored = localStorage.getItem('francpay_last_space');
     if (stored === 'professional') {
       setCurrentView('professional');
+      const storedProSection = localStorage.getItem('francpay_last_pro_section');
+      if (
+        storedProSection === 'clients' ||
+        storedProSection === 'dashboard' ||
+        storedProSection === 'encaissement' ||
+        storedProSection === 'settings'
+      ) {
+        setProSection(storedProSection);
+      }
     } else if (stored === 'utilisateur') {
       setCurrentView('utilisateur');
     }
@@ -123,6 +141,10 @@ const AppContent: React.FC = () => {
       localStorage.setItem('francpay_last_space', 'utilisateur');
     }
   }, [currentView]);
+
+  useEffect(() => {
+    localStorage.setItem('francpay_last_pro_section', proSection);
+  }, [proSection]);
 
   const handleGetStarted = () => {
     setCurrentView('space-selector');

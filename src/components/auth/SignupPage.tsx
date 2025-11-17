@@ -34,7 +34,8 @@ export const SignupPage: React.FC<SignupPageProps> = ({
   const [oauthLoading, setOauthLoading] = useState(false);
 
   const handleChange = (field: keyof typeof form, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    const nextValue = field === 'username' ? value.toLowerCase() : value;
+    setForm((prev) => ({ ...prev, [field]: nextValue }));
   };
 
   const handleSubmit = async (event: React.FormEvent) => {

@@ -10,6 +10,8 @@ import { WalletDrawer } from '@/components/spaces/utilisateur/WalletDrawer';
 import { ContactDrawer } from '@/components/spaces/utilisateur/ContactDrawer';
 import { ShareDrawer } from '@/components/spaces/utilisateur/ShareDrawer';
 import { DepositDrawer } from '@/components/spaces/utilisateur/DepositDrawer';
+import { ProfessionalApplicationDrawer } from '@/components/spaces/utilisateur/ProfessionalApplicationDrawer';
+import { ProfessionalAccessPortal } from '@/components/spaces/utilisateur/ProfessionalAccessPortal';
 import { useOnchainDepositSync } from '@/hooks/useOnchainDepositSync';
 import { UtilisateurInvestSection } from '@/components/spaces/utilisateur/UtilisateurInvestSection';
 import { TransactionHistoryPage } from '@/components/spaces/utilisateur/TransactionHistorySheet';
@@ -97,6 +99,10 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   const [logoutPending, setLogoutPending] = useState(false);
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
+  const [proApplicationDrawerOpen, setProApplicationDrawerOpen] = useState(false);
+  const [proAccessPortalOpen, setProAccessPortalOpen] = useState(false);
+  const [proApplicationStatus, setProApplicationStatus] = useState<'idle' | 'pending' | 'approved'>('idle');
+  const [proAccessGranted, setProAccessGranted] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [detailTransaction, setDetailTransaction] = useState<TransactionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -255,6 +261,7 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       { data: profileData, error: profileError },
       { data: balanceData, error: balanceError },
       { data: txData, error: txError },
+      { data: professionalApplicationData, error: professionalApplicationError },
     ] = await Promise.all([
       supabase
         .from('UserProfile')
@@ -268,6 +275,13 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
         .eq('authUserId', session.user.id)
         .order('createdAt', { ascending: false })
         .limit(RECENT_TRANSACTION_BUFFER_LIMIT),
+      supabase
+        .from('ProfessionalApplication')
+        .select('status')
+        .eq('authUserId', session.user.id)
+        .order('submittedAt', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     let resolvedProfile = profileData;
@@ -335,6 +349,21 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       setTransactions([]);
     }
 
+    if (professionalApplicationError) {
+      console.error('Erreur statut dossier pro', professionalApplicationError);
+    }
+    const applicationStatus = professionalApplicationData?.status;
+    if (applicationStatus === 'APPROVED') {
+      setProApplicationStatus('approved');
+      setProAccessGranted(true);
+    } else if (applicationStatus === 'PENDING') {
+      setProApplicationStatus('pending');
+      setProAccessGranted(false);
+    } else if (applicationStatus === 'REJECTED' || !applicationStatus) {
+      setProApplicationStatus('idle');
+      setProAccessGranted(false);
+    }
+
     if (!transactionsLoadedRef.current) {
       setTransactionsLoading(false);
       transactionsLoadedRef.current = true;
@@ -345,6 +374,33 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
   useEffect(() => {
     refreshProfile();
   }, [refreshProfile]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedStatus = localStorage.getItem('francpay_pro_application_status');
+    if (storedStatus === 'pending' || storedStatus === 'approved') {
+      setProApplicationStatus(storedStatus);
+    }
+    const storedAccess = localStorage.getItem('francpay_pro_access_granted');
+    if (storedAccess === 'true') {
+      setProAccessGranted(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (proApplicationStatus === 'idle') {
+      localStorage.removeItem('francpay_pro_application_status');
+      return;
+    }
+    localStorage.setItem('francpay_pro_application_status', proApplicationStatus);
+  }, [proApplicationStatus]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('francpay_pro_access_granted', proAccessGranted ? 'true' : 'false');
+  }, [proAccessGranted]);
+
 
   const handleMerchantPayment = useCallback(
     async (payload: { reference: string; amount: string; tag?: string; name?: string }) => {
@@ -371,6 +427,17 @@ export const UtilisateurHome: React.FC<UtilisateurHomeProps> = ({
       }
     },
     [refreshProfile]
+  );
+
+  const handleProfessionalApplicationSubmitted = useCallback(
+    (status: 'pending' | 'approved') => {
+      setProApplicationStatus(status);
+      if (status === 'approved') {
+        setProAccessGranted(true);
+        setProAccessPortalOpen(true);
+      }
+    },
+    []
   );
 
   const handleWalletClose = () => {
@@ -816,6 +883,10 @@ const closeTransactionDetail = useCallback(() => {
             onChangeCurrency={handleCurrencyChange}
             currencyOptions={currencyMenuOptions}
             conversionHint={currencyHint}
+            onOpenProApplication={() => setProApplicationDrawerOpen(true)}
+            onOpenProPortal={() => setProAccessPortalOpen(true)}
+            proApplicationStatus={proApplicationStatus}
+            proAccessGranted={proAccessGranted}
           />
 
           {activeSection === 'home' && (
@@ -922,6 +993,22 @@ const closeTransactionDetail = useCallback(() => {
         onClose={() => setDepositDrawerOpen(false)}
         depositTag={depositTag}
         onManualRefresh={handleManualDepositRefresh}
+      />
+      <ProfessionalApplicationDrawer
+        open={proApplicationDrawerOpen}
+        onClose={() => setProApplicationDrawerOpen(false)}
+        onSubmitted={handleProfessionalApplicationSubmitted}
+        authUserId={authUserId}
+        profileEmail={profileEmail}
+      />
+      <ProfessionalAccessPortal
+        open={proAccessPortalOpen}
+        onClose={() => setProAccessPortalOpen(false)}
+        onNavigate={(target) => {
+          const section = target === 'funds' ? 'dashboard' : 'encaissement';
+          const destination = `/?space=professional&section=${section}`;
+          window.location.href = destination;
+        }}
       />
     </>
   );
